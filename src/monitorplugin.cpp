@@ -22,7 +22,7 @@ const QString CpuMemDockPlugin::pluginName() const
 
 const QString CpuMemDockPlugin::pluginDisplayName() const
 {
-    return QStringLiteral("CPU、内存与封装");
+    return QStringLiteral("硬件监控");
 }
 
 void CpuMemDockPlugin::init(PluginProxyInterface *proxyInter)
