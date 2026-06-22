@@ -1,0 +1,24 @@
+Source: monitor-dock-plugin
+Section: utils
+Priority: optional
+Maintainer: lichangze <lichangze512@gmail.com>
+Build-Depends:
+ cmake,
+ debhelper-compat (= 13),
+ pkg-config,
+ qt6-base-dev | qtbase5-dev,
+ dde-tray-loader-dev | dde-dock-dev
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: monitor-dock-plugin
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+ dde-tray-loader
+Conflicts: dde-dock-monitor-plugin
+Replaces: dde-dock-monitor-plugin
+Description: system monitor plugin for DDE Dock
+ A DDE Dock plugin that shows current CPU usage and memory usage on the
+ desktop taskbar.

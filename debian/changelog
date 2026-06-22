@@ -1,0 +1,5 @@
+monitor-dock-plugin (0.1.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- lichangze <lichangze512@gmail.com>  Mon, 22 Jun 2026 11:40:00 +0800
