@@ -22,7 +22,9 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    QString formatFrequency(double mhz) const;
     QString formatMemory(quint64 kb) const;
+    QString formatSpeed(double bytesPerSecond) const;
     QString formatPackageStats() const;
     void updateSize();
 

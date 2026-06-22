@@ -18,8 +18,11 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    QString elidedText(const QString &text, const QFont &font, int width) const;
+    QString frequencyText(double mhz) const;
     QString packageText() const;
     QString percentText(double value) const;
+    QString speedText(double bytesPerSecond) const;
 
     CpuMemStats m_stats;
 };

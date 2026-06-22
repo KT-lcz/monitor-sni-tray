@@ -40,6 +40,7 @@ public:
     QIcon icon(Dock::IconType iconType, Dock::ThemeType themeType) const override;
 
 private Q_SLOTS:
+    void launchCpuX();
     void updateStats();
 
 private:

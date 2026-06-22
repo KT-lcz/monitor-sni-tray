@@ -27,6 +27,23 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (stats.cpu.performanceCoreCount < 0 || stats.cpu.efficiencyCoreCount < 0) {
+        qCritical() << "core count out of range"
+                    << stats.cpu.performanceCoreCount
+                    << stats.cpu.efficiencyCoreCount;
+        return 1;
+    }
+
+    if (stats.cpu.performanceAverageMHz < 0.0) {
+        qCritical() << "performance average frequency out of range" << stats.cpu.performanceAverageMHz;
+        return 1;
+    }
+
+    if (stats.network.valid && stats.network.downloadBytesPerSecond < 0.0) {
+        qCritical() << "download speed out of range" << stats.network.downloadBytesPerSecond;
+        return 1;
+    }
+
     const CpuMemStats::PackageStats packageStats = CpuMemStatsReader::parseTurbostatOutput(
         "PkgTmp\tPkgWatt\n"
         "41\t7.15\n"
@@ -50,6 +67,12 @@ int main(int argc, char *argv[])
             << "MEM:" << stats.memory.usedPercent()
             << "USED_KB:" << stats.memory.usedKb()
             << "TOTAL_KB:" << stats.memory.totalKb
+            << "CPU_NAME:" << stats.cpu.name
+            << "P_CORES:" << stats.cpu.performanceCoreCount
+            << "E_CORES:" << stats.cpu.efficiencyCoreCount
+            << "P_AVG_MHZ:" << stats.cpu.performanceAverageMHz
+            << "NET_VALID:" << stats.network.valid
+            << "DL_BPS:" << stats.network.downloadBytesPerSecond
             << "PKG_VALID:" << stats.package.valid
             << "PKG_TMP:" << stats.package.temperatureC
             << "PKG_WATT:" << stats.package.powerW;

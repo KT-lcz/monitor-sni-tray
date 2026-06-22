@@ -1,7 +1,15 @@
 #include "systemstats.h"
 
 #include <QByteArray>
+#include <QDir>
+#include <QFileInfo>
 #include <QFile>
+#include <QHash>
+#include <QProcess>
+#include <QSet>
+#include <QStringList>
+#include <QVector>
+#include <algorithm>
 
 quint64 CpuMemMemorySnapshot::usedKb() const
 {
@@ -24,7 +32,10 @@ double CpuMemMemorySnapshot::usedPercent() const
 CpuMemStatsReader::CpuMemStatsReader()
     : m_lastCpu(readCpuSnapshot())
     , m_hasLastCpu(m_lastCpu.total > 0)
+    , m_lastNetwork(readNetworkSnapshot())
+    , m_hasLastNetwork(m_lastNetwork.valid)
 {
+    m_networkTimer.start();
 }
 
 CpuMemStatsReader::~CpuMemStatsReader()
@@ -44,6 +55,7 @@ CpuMemStats CpuMemStatsReader::sample()
 {
     CpuMemStats stats;
     stats.memory = readMemorySnapshot();
+    stats.cpu = readCpuInfo();
     stats.package = readPackageStats();
 
     const CpuMemCpuSnapshot currentCpu = readCpuSnapshot();
@@ -59,6 +71,18 @@ CpuMemStats CpuMemStatsReader::sample()
     if (currentCpu.total > 0) {
         m_lastCpu = currentCpu;
         m_hasLastCpu = true;
+    }
+
+    const CpuMemNetworkSnapshot currentNetwork = readNetworkSnapshot();
+    const qint64 networkElapsed = m_networkTimer.isValid() ? m_networkTimer.elapsed() : 0;
+    if (currentNetwork.valid) {
+        stats.network.valid = true;
+        if (m_hasLastNetwork && currentNetwork.rxBytes >= m_lastNetwork.rxBytes && networkElapsed > 0) {
+            stats.network.downloadBytesPerSecond = (currentNetwork.rxBytes - m_lastNetwork.rxBytes) * 1000.0 / networkElapsed;
+        }
+        m_lastNetwork = currentNetwork;
+        m_hasLastNetwork = true;
+        m_networkTimer.restart();
     }
 
     return stats;
@@ -128,6 +152,174 @@ CpuMemMemorySnapshot CpuMemStatsReader::readMemorySnapshot()
     return snapshot;
 }
 
+CpuMemNetworkSnapshot CpuMemStatsReader::readNetworkSnapshot()
+{
+    QFile file(QStringLiteral("/proc/net/dev"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+
+    CpuMemNetworkSnapshot snapshot;
+    while (true) {
+        const QByteArray line = file.readLine();
+        if (line.isNull()) {
+            break;
+        }
+
+        const int colon = line.indexOf(':');
+        if (colon < 0) {
+            continue;
+        }
+
+        const QString interfaceName = QString::fromLatin1(line.left(colon).trimmed());
+        if (interfaceName == QStringLiteral("lo")) {
+            continue;
+        }
+
+        const QList<QByteArray> values = line.mid(colon + 1).simplified().split(' ');
+        if (values.size() < 1) {
+            continue;
+        }
+
+        bool ok = false;
+        const quint64 rxBytes = values.at(0).toULongLong(&ok);
+        if (ok) {
+            snapshot.rxBytes += rxBytes;
+            snapshot.valid = true;
+        }
+    }
+
+    return snapshot;
+}
+
+CpuMemStats::CpuInfo CpuMemStatsReader::readCpuInfo()
+{
+    CpuMemStats::CpuInfo info;
+    static const QString cpuName = readCpuName();
+    info.name = cpuName;
+
+    struct PolicyInfo
+    {
+        int cpu = -1;
+        int physicalCore = -1;
+        quint64 maxKHz = 0;
+        quint64 currentKHz = 0;
+    };
+
+    QVector<PolicyInfo> policies;
+    const QDir cpufreqDir(QStringLiteral("/sys/devices/system/cpu/cpufreq"));
+    const QFileInfoList policyDirs = cpufreqDir.entryInfoList({ QStringLiteral("policy*") }, QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo &policyDir : policyDirs) {
+        const QString policyName = policyDir.fileName();
+        bool cpuOk = false;
+        const int cpu = policyName.mid(QStringLiteral("policy").size()).toInt(&cpuOk);
+        if (!cpuOk) {
+            continue;
+        }
+
+        auto readUIntFile = [](const QString &path) -> quint64 {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                return 0;
+            }
+
+            bool ok = false;
+            const quint64 value = file.readAll().trimmed().toULongLong(&ok);
+            return ok ? value : 0;
+        };
+
+        quint64 currentKHz = readUIntFile(policyDir.filePath() + QStringLiteral("/scaling_cur_freq"));
+        if (currentKHz == 0) {
+            currentKHz = readUIntFile(policyDir.filePath() + QStringLiteral("/cpuinfo_avg_freq"));
+        }
+
+        const quint64 maxKHz = readUIntFile(policyDir.filePath() + QStringLiteral("/cpuinfo_max_freq"));
+        if (maxKHz == 0 || currentKHz == 0) {
+            continue;
+        }
+
+        int physicalCore = cpu;
+        int packageId = 0;
+        QFile packageFile(QStringLiteral("/sys/devices/system/cpu/cpu%1/topology/physical_package_id").arg(cpu));
+        if (packageFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            bool packageOk = false;
+            const int parsedPackageId = packageFile.readAll().trimmed().toInt(&packageOk);
+            if (packageOk) {
+                packageId = parsedPackageId;
+            }
+        }
+
+        QFile topologyFile(QStringLiteral("/sys/devices/system/cpu/cpu%1/topology/core_id").arg(cpu));
+        if (topologyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            bool coreOk = false;
+            const int coreId = topologyFile.readAll().trimmed().toInt(&coreOk);
+            if (coreOk) {
+                physicalCore = packageId * 100000 + coreId;
+            }
+        }
+
+        policies.append({ cpu, physicalCore, maxKHz, currentKHz });
+    }
+
+    if (policies.isEmpty()) {
+        return info;
+    }
+
+    QVector<quint64> maxFrequencies;
+    for (const PolicyInfo &policy : policies) {
+        if (!maxFrequencies.contains(policy.maxKHz)) {
+            maxFrequencies.append(policy.maxKHz);
+        }
+    }
+
+    std::sort(maxFrequencies.begin(), maxFrequencies.end());
+    quint64 performanceMinKHz = maxFrequencies.isEmpty() ? 0 : maxFrequencies.last();
+    if (maxFrequencies.size() > 1) {
+        quint64 largestGap = 0;
+        int splitIndex = maxFrequencies.size() - 1;
+        for (int i = 1; i < maxFrequencies.size(); ++i) {
+            const quint64 gap = maxFrequencies.at(i) - maxFrequencies.at(i - 1);
+            if (gap > largestGap) {
+                largestGap = gap;
+                splitIndex = i;
+            }
+        }
+
+        if (largestGap * 10 >= maxFrequencies.last()) {
+            performanceMinKHz = maxFrequencies.at(splitIndex);
+        } else {
+            performanceMinKHz = maxFrequencies.first();
+        }
+    }
+
+    QSet<int> performanceCores;
+    QSet<int> efficiencyCores;
+    QHash<int, double> performanceCoreTotalKHz;
+    QHash<int, int> performanceCoreThreadCount;
+
+    for (const PolicyInfo &policy : policies) {
+        if (policy.maxKHz >= performanceMinKHz) {
+            performanceCores.insert(policy.physicalCore);
+            performanceCoreTotalKHz[policy.physicalCore] += policy.currentKHz;
+            performanceCoreThreadCount[policy.physicalCore] += 1;
+        } else {
+            efficiencyCores.insert(policy.physicalCore);
+        }
+    }
+
+    info.performanceCoreCount = performanceCores.size();
+    info.efficiencyCoreCount = efficiencyCores.size();
+    if (!performanceCores.isEmpty()) {
+        double performanceCoreAverageTotalKHz = 0.0;
+        for (const int coreId : performanceCores) {
+            performanceCoreAverageTotalKHz += performanceCoreTotalKHz.value(coreId) / performanceCoreThreadCount.value(coreId, 1);
+        }
+        info.performanceAverageMHz = performanceCoreAverageTotalKHz / performanceCores.size() / 1000.0;
+    }
+
+    return info;
+}
+
 CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArray &output)
 {
     CpuMemStats::PackageStats stats;
@@ -157,6 +349,75 @@ CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArr
     }
 
     return stats;
+}
+
+QString CpuMemStatsReader::readCpuName()
+{
+    QFile file(QStringLiteral("/proc/cpuinfo"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+
+    QString fallbackName;
+    while (true) {
+        const QByteArray line = file.readLine();
+        if (line.isNull()) {
+            break;
+        }
+
+        const int colon = line.indexOf(':');
+        if (colon < 0) {
+            continue;
+        }
+
+        const QByteArray key = line.left(colon).trimmed().toLower();
+        if (key == QByteArrayLiteral("model name")
+            || key == QByteArrayLiteral("hardware")
+            || key == QByteArrayLiteral("cpu model")) {
+            const QString value = QString::fromUtf8(line.mid(colon + 1).trimmed());
+            if (!value.isEmpty()) {
+                return value;
+            }
+        } else if (key == QByteArrayLiteral("processor")) {
+            bool numericProcessor = false;
+            const QString value = QString::fromUtf8(line.mid(colon + 1).trimmed());
+            value.toInt(&numericProcessor);
+            if (!numericProcessor && !value.isEmpty() && fallbackName.isEmpty()) {
+                fallbackName = value;
+            }
+        }
+    }
+
+    if (!fallbackName.isEmpty()) {
+        return fallbackName;
+    }
+
+    QProcess lscpu;
+    lscpu.start(QStringLiteral("lscpu"), { QStringLiteral("--json") });
+    if (lscpu.waitForFinished(500)) {
+        const QList<QByteArray> lines = lscpu.readAllStandardOutput().split('\n');
+        for (const QByteArray &line : lines) {
+            if (!line.contains("\"Model name:\"")) {
+                continue;
+            }
+
+            const int dataIndex = line.indexOf("\"data\"");
+            const int colon = dataIndex >= 0 ? line.indexOf(':', dataIndex) : -1;
+            if (colon < 0) {
+                continue;
+            }
+
+            QString value = QString::fromUtf8(line.mid(colon + 1).trimmed());
+            value.remove('"');
+            value.remove(',');
+            value = value.trimmed();
+            if (!value.isEmpty()) {
+                return value;
+            }
+        }
+    }
+
+    return {};
 }
 
 CpuMemStats::PackageStats CpuMemStatsReader::readPackageStats()

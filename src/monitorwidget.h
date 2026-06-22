@@ -14,6 +14,9 @@ public:
 
     void setStats(const CpuMemStats &stats);
 
+Q_SIGNALS:
+    void activated();
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;

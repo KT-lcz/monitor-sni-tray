@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QMap>
 #include <QPainter>
+#include <QProcess>
 #include <QVariant>
 
 const QString CpuMemDockPlugin::ItemKey = QStringLiteral("cpu-memory-monitor");
@@ -149,6 +150,11 @@ QIcon CpuMemDockPlugin::icon(Dock::IconType iconType, Dock::ThemeType themeType)
     return buildIcon(themeType);
 }
 
+void CpuMemDockPlugin::launchCpuX()
+{
+    QProcess::startDetached(QStringLiteral("cpu-x"));
+}
+
 void CpuMemDockPlugin::updateStats()
 {
     m_stats = m_statsReader.sample();
@@ -181,6 +187,7 @@ void CpuMemDockPlugin::loadPlugin()
 
     m_loaded = true;
     m_itemWidget = new CpuMemMonitorWidget;
+    connect(m_itemWidget, &CpuMemMonitorWidget::activated, this, &CpuMemDockPlugin::launchCpuX);
     m_quickPanelWidget = new CpuMemQuickPanelWidget;
     m_tipsWidget.reset(new CpuMemTipsWidget);
     updateStats();

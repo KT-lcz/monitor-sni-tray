@@ -16,7 +16,10 @@ Architecture: any
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
- dde-tray-loader
+ dde-tray-loader,
+ cpu-x,
+ libcap2-bin,
+ linux-cpupower
 Conflicts: dde-dock-monitor-plugin
 Replaces: dde-dock-monitor-plugin
 Description: system monitor plugin for DDE Dock

@@ -45,20 +45,29 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
                                .arg(formatMemory(m_stats.memory.usedKb()))
                                .arg(formatMemory(m_stats.memory.totalKb));
     QStringList labels = {
+        QStringLiteral("NAME"),
         QStringLiteral("CPU"),
+        QStringLiteral("P/E"),
+        QStringLiteral("P-FREQ"),
+        QStringLiteral("PKG"),
         QStringLiteral("MEM"),
+        QStringLiteral("DOWN"),
     };
     QStringList values = {
+        m_stats.cpu.name.isEmpty() ? QStringLiteral("--") : m_stats.cpu.name,
         QStringLiteral("%1%").arg(m_stats.cpuPercent, 0, 'f', 1),
+        QStringLiteral("%1 / %2").arg(m_stats.cpu.performanceCoreCount).arg(m_stats.cpu.efficiencyCoreCount),
+        formatFrequency(m_stats.cpu.performanceAverageMHz),
+        m_stats.package.valid ? formatPackageStats() : QStringLiteral("--"),
         QStringLiteral("%1%  %2").arg(m_stats.memory.usedPercent(), 0, 'f', 1).arg(memory),
+        m_stats.network.valid ? formatSpeed(m_stats.network.downloadBytesPerSecond) : QStringLiteral("--"),
     };
 
-    if (m_stats.package.valid) {
-        labels.append(QStringLiteral("PKG"));
-        values.append(formatPackageStats());
+    int labelWidth = 0;
+    for (const QString &label : labels) {
+        labelWidth = qMax(labelWidth, fontMetrics().horizontalAdvance(label));
     }
-
-    const int labelWidth = fontMetrics().horizontalAdvance(QStringLiteral("PKG")) + 16;
+    labelWidth += 16;
     const int rowHeight = fontMetrics().height() + 8;
     const int top = 10;
     const int left = 12;
@@ -71,6 +80,19 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
     }
 }
 
+QString CpuMemTipsWidget::formatFrequency(double mhz) const
+{
+    if (mhz <= 0.0) {
+        return QStringLiteral("--");
+    }
+
+    if (mhz >= 1000.0) {
+        return QStringLiteral("%1 GHz").arg(mhz / 1000.0, 0, 'f', 2);
+    }
+
+    return QStringLiteral("%1 MHz").arg(mhz, 0, 'f', 0);
+}
+
 QString CpuMemTipsWidget::formatMemory(quint64 kb) const
 {
     const double mib = kb / 1024.0;
@@ -79,6 +101,21 @@ QString CpuMemTipsWidget::formatMemory(quint64 kb) const
     }
 
     return QStringLiteral("%1 GiB").arg(mib / 1024.0, 0, 'f', 1);
+}
+
+QString CpuMemTipsWidget::formatSpeed(double bytesPerSecond) const
+{
+    const double kib = bytesPerSecond / 1024.0;
+    if (kib < 1024.0) {
+        return QStringLiteral("%1 KiB/s").arg(kib, 0, 'f', kib >= 100.0 ? 0 : 1);
+    }
+
+    const double mib = kib / 1024.0;
+    if (mib < 1024.0) {
+        return QStringLiteral("%1 MiB/s").arg(mib, 0, 'f', mib >= 100.0 ? 0 : 1);
+    }
+
+    return QStringLiteral("%1 GiB/s").arg(mib / 1024.0, 0, 'f', 2);
 }
 
 QString CpuMemTipsWidget::formatPackageStats() const
@@ -93,10 +130,12 @@ void CpuMemTipsWidget::updateSize()
     const QString memory = QStringLiteral("100.0%  %1 / %2")
                                .arg(formatMemory(m_stats.memory.usedKb()))
                                .arg(formatMemory(m_stats.memory.totalKb));
+    const QString cpuName = m_stats.cpu.name.isEmpty() ? QString() : m_stats.cpu.name;
     const int memoryWidth = fontMetrics().horizontalAdvance(memory) + 64;
     const int packageWidth = fontMetrics().horizontalAdvance(formatPackageStats()) + 64;
-    const int width = qMax(190, qMax(memoryWidth, packageWidth));
-    const int rowCount = m_stats.package.valid ? 3 : 2;
+    const int cpuNameWidth = fontMetrics().horizontalAdvance(cpuName) + 96;
+    const int width = qMax(240, qMax(qMax(memoryWidth, packageWidth), cpuNameWidth));
+    const int rowCount = 7;
     const int height = (fontMetrics().height() + 8) * rowCount + 20;
     setFixedSize(width, height);
 }

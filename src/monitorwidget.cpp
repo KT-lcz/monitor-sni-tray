@@ -105,8 +105,13 @@ void CpuMemMonitorWidget::mousePressEvent(QMouseEvent *event)
 
 void CpuMemMonitorWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    const bool activate = m_pressed && event->button() == Qt::LeftButton && rect().contains(event->pos());
     m_pressed = false;
     update();
+    if (activate) {
+        Q_EMIT activated();
+    }
+
     QWidget::mouseReleaseEvent(event);
 }
 
