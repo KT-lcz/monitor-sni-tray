@@ -3,6 +3,7 @@
 
 #include "systemstats.h"
 
+#include <QColor>
 #include <QWidget>
 
 class CpuMemMonitorWidget : public QWidget
@@ -31,8 +32,8 @@ protected:
 
 private:
     QColor foregroundColor() const;
+    QColor temperatureColor() const;
     QRectF contentRect() const;
-    QString compactPercent(double value) const;
 
     CpuMemStats m_stats;
     bool m_hover = false;

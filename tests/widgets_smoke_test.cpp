@@ -1,5 +1,6 @@
 #include "../src/quickpanelwidget.h"
 #include "../src/tipswidget.h"
+#include "../src/monitorwidget.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -55,6 +56,10 @@ int main(int argc, char *argv[])
     CpuMemQuickPanelWidget quickPanel;
     quickPanel.setStats(stats);
     renderWidget(quickPanel);
+
+    CpuMemMonitorWidget monitor;
+    monitor.setStats(stats);
+    renderWidget(monitor);
 
     return 0;
 }

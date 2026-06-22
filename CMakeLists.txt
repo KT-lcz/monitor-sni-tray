@@ -64,6 +64,8 @@ option(BUILD_WIDGETS_SMOKE_TEST "Build a small widget rendering smoke test execu
 if(BUILD_WIDGETS_SMOKE_TEST)
     add_executable(widgets-smoke-test
         tests/widgets_smoke_test.cpp
+        src/monitorwidget.cpp
+        src/monitorwidget.h
         src/quickpanelwidget.cpp
         src/quickpanelwidget.h
         src/systemstats.cpp

@@ -1,9 +1,7 @@
 #include "monitorwidget.h"
 
-#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPalette>
 
 CpuMemMonitorWidget::CpuMemMonitorWidget(QWidget *parent)
@@ -25,47 +23,49 @@ void CpuMemMonitorWidget::paintEvent(QPaintEvent *event)
     Q_UNUSED(event)
 
     QPainter painter(this);
-    painter.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+    painter.setRenderHint(QPainter::Antialiasing);
 
     const QRectF bgRect = rect().adjusted(2, 2, -2, -2);
     const QColor fg = foregroundColor();
     QColor bg = fg;
     bg.setAlpha(m_pressed ? 38 : (m_hover ? 30 : 18));
 
-    QPainterPath path;
-    path.addRoundedRect(bgRect, 6, 6);
-    painter.fillPath(path, bg);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(bg);
+    painter.drawRoundedRect(bgRect, 4, 4);
 
     const QRectF area = contentRect();
-    if (width() < 64 || height() < 28) {
-        const qreal cpuWidth = area.width() * qBound(0.0, m_stats.cpuPercent / 100.0, 1.0);
-        const qreal memWidth = area.width() * qBound(0.0, m_stats.memory.usedPercent() / 100.0, 1.0);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(fg);
-        painter.drawRoundedRect(QRectF(area.left(), area.top() + 1, cpuWidth, 4), 2, 2);
-        painter.drawRoundedRect(QRectF(area.left(), area.bottom() - 5, memWidth, 4), 2, 2);
-        return;
-    }
+    QColor pinColor = fg;
+    pinColor.setAlpha(m_stats.package.valid ? 150 : 105);
 
-    const qreal rowHeight = area.height() / 2.0;
-    QFont labelFont = font();
-    labelFont.setPixelSize(qMax(8, qMin(10, height() / 4)));
-    labelFont.setBold(true);
+    painter.setPen(QPen(pinColor, 1.2, Qt::SolidLine, Qt::RoundCap));
+    const qreal left = area.left();
+    const qreal right = area.right();
+    const qreal top = area.top();
+    const qreal bottom = area.bottom();
+    const qreal midX = area.center().x();
+    const qreal midY = area.center().y();
+    painter.drawLine(QPointF(left, top + 2), QPointF(left - 1.5, top + 2));
+    painter.drawLine(QPointF(left, midY), QPointF(left - 1.5, midY));
+    painter.drawLine(QPointF(left, bottom - 2), QPointF(left - 1.5, bottom - 2));
+    painter.drawLine(QPointF(right, top + 2), QPointF(right + 1.5, top + 2));
+    painter.drawLine(QPointF(right, midY), QPointF(right + 1.5, midY));
+    painter.drawLine(QPointF(right, bottom - 2), QPointF(right + 1.5, bottom - 2));
+    painter.drawLine(QPointF(midX, top), QPointF(midX, top - 1.5));
+    painter.drawLine(QPointF(midX, bottom), QPointF(midX, bottom + 1.5));
 
-    QFont valueFont = font();
-    valueFont.setPixelSize(qMax(8, qMin(11, height() / 3)));
+    const QColor heatColor = temperatureColor();
+    QColor borderColor = fg;
+    borderColor.setAlpha(180);
+    painter.setPen(QPen(borderColor, 1));
+    painter.setBrush(heatColor);
+    painter.drawRoundedRect(area, 2, 2);
 
-    const QString cpuText = compactPercent(m_stats.cpuPercent);
-    const QString memText = compactPercent(m_stats.memory.usedPercent());
-
-    painter.setPen(fg);
-    painter.setFont(labelFont);
-    painter.drawText(QRectF(area.left(), area.top(), 28, rowHeight), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("CPU"));
-    painter.drawText(QRectF(area.left(), area.top() + rowHeight, 28, rowHeight), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("MEM"));
-
-    painter.setFont(valueFont);
-    painter.drawText(QRectF(area.left() + 30, area.top(), area.width() - 30, rowHeight), Qt::AlignRight | Qt::AlignVCenter, cpuText);
-    painter.drawText(QRectF(area.left() + 30, area.top() + rowHeight, area.width() - 30, rowHeight), Qt::AlignRight | Qt::AlignVCenter, memText);
+    QColor coreColor = heatColor.lighter(m_stats.package.valid ? 132 : 115);
+    coreColor.setAlpha(m_stats.package.valid ? 220 : 90);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(coreColor);
+    painter.drawRoundedRect(area.adjusted(3, 3, -3, -3), 1.2, 1.2);
 }
 
 void CpuMemMonitorWidget::resizeEvent(QResizeEvent *event)
@@ -120,16 +120,29 @@ QColor CpuMemMonitorWidget::foregroundColor() const
     return palette().color(QPalette::WindowText);
 }
 
-QRectF CpuMemMonitorWidget::contentRect() const
+QColor CpuMemMonitorWidget::temperatureColor() const
 {
-    if (width() < 64 || height() < 28) {
-        return rect().adjusted(3, 3, -3, -3);
+    if (!m_stats.package.valid) {
+        QColor color = foregroundColor();
+        color.setAlpha(150);
+        return color;
     }
 
-    return rect().adjusted(8, 4, -8, -4);
+    const double temperature = qBound(10.0, m_stats.package.temperatureC, 90.0);
+    if (temperature >= 80.0) {
+        return QColor(220, 0, 0);
+    }
+
+    const double ratio = (temperature - 10.0) / 70.0;
+    const QColor cool(255, 248, 198);
+    const QColor warm(255, 96, 24);
+    return QColor(
+        qRound(cool.red() + (warm.red() - cool.red()) * ratio),
+        qRound(cool.green() + (warm.green() - cool.green()) * ratio),
+        qRound(cool.blue() + (warm.blue() - cool.blue()) * ratio));
 }
 
-QString CpuMemMonitorWidget::compactPercent(double value) const
+QRectF CpuMemMonitorWidget::contentRect() const
 {
-    return QStringLiteral("%1%").arg(value, 0, 'f', value >= 99.95 ? 0 : 1);
+    return rect().adjusted(4, 4, -4, -4);
 }
