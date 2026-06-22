@@ -27,9 +27,31 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    const CpuMemStats::PackageStats packageStats = CpuMemStatsReader::parseTurbostatOutput(
+        "PkgTmp\tPkgWatt\n"
+        "41\t7.15\n"
+        "PkgTmp\tPkgWatt\n"
+        "43\t8.25\n");
+    if (!packageStats.valid || packageStats.temperatureC != 43.0 || packageStats.powerW != 8.25) {
+        qCritical() << "failed to parse turbostat package stats"
+                    << packageStats.valid
+                    << packageStats.temperatureC
+                    << packageStats.powerW;
+        return 1;
+    }
+
+    const CpuMemStats::PackageStats invalidPackageStats = CpuMemStatsReader::parseTurbostatOutput("PkgTmp PkgWatt\n");
+    if (invalidPackageStats.valid) {
+        qCritical() << "invalid turbostat output parsed as valid";
+        return 1;
+    }
+
     qInfo() << "CPU:" << stats.cpuPercent
             << "MEM:" << stats.memory.usedPercent()
             << "USED_KB:" << stats.memory.usedKb()
-            << "TOTAL_KB:" << stats.memory.totalKb;
+            << "TOTAL_KB:" << stats.memory.totalKb
+            << "PKG_VALID:" << stats.package.valid
+            << "PKG_TMP:" << stats.package.temperatureC
+            << "PKG_WATT:" << stats.package.powerW;
     return 0;
 }

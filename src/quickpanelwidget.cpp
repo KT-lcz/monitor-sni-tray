@@ -6,7 +6,7 @@
 CpuMemQuickPanelWidget::CpuMemQuickPanelWidget(QWidget *parent)
     : QWidget(parent)
 {
-    setFixedSize(70, 60);
+    setFixedSize(104, 72);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 }
 
@@ -31,11 +31,12 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
     valueFont.setPixelSize(11);
 
     const QRect area = rect().adjusted(8, 6, -8, -6);
-    const int rowHeight = area.height() / 2;
+    const int rowHeight = area.height() / 3;
 
     painter.setFont(labelFont);
     painter.drawText(QRect(area.left(), area.top(), 28, rowHeight), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("CPU"));
     painter.drawText(QRect(area.left(), area.top() + rowHeight, 28, rowHeight), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("MEM"));
+    painter.drawText(QRect(area.left(), area.top() + rowHeight * 2, 28, rowHeight), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("PKG"));
 
     painter.setFont(valueFont);
     painter.drawText(QRect(area.left() + 30, area.top(), area.width() - 30, rowHeight),
@@ -44,6 +45,20 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
     painter.drawText(QRect(area.left() + 30, area.top() + rowHeight, area.width() - 30, rowHeight),
                      Qt::AlignRight | Qt::AlignVCenter,
                      percentText(m_stats.memory.usedPercent()));
+    painter.drawText(QRect(area.left() + 30, area.top() + rowHeight * 2, area.width() - 30, rowHeight),
+                     Qt::AlignRight | Qt::AlignVCenter,
+                     packageText());
+}
+
+QString CpuMemQuickPanelWidget::packageText() const
+{
+    if (!m_stats.package.valid) {
+        return QStringLiteral("--");
+    }
+
+    return QStringLiteral("%1C %2W")
+        .arg(m_stats.package.temperatureC, 0, 'f', 0)
+        .arg(m_stats.package.powerW, 0, 'f', 0);
 }
 
 QString CpuMemQuickPanelWidget::percentText(double value) const

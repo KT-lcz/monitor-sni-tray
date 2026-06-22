@@ -27,10 +27,24 @@ CpuMemStatsReader::CpuMemStatsReader()
 {
 }
 
+CpuMemStatsReader::~CpuMemStatsReader()
+{
+    if (m_turbostatProcess.state() == QProcess::NotRunning) {
+        return;
+    }
+
+    m_turbostatProcess.terminate();
+    if (!m_turbostatProcess.waitForFinished(100)) {
+        m_turbostatProcess.kill();
+        m_turbostatProcess.waitForFinished(100);
+    }
+}
+
 CpuMemStats CpuMemStatsReader::sample()
 {
     CpuMemStats stats;
     stats.memory = readMemorySnapshot();
+    stats.package = readPackageStats();
 
     const CpuMemCpuSnapshot currentCpu = readCpuSnapshot();
     if (m_hasLastCpu && currentCpu.total > m_lastCpu.total) {
@@ -112,4 +126,97 @@ CpuMemMemorySnapshot CpuMemStatsReader::readMemorySnapshot()
     }
 
     return snapshot;
+}
+
+CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArray &output)
+{
+    CpuMemStats::PackageStats stats;
+    const QList<QByteArray> lines = output.split('\n');
+    for (const QByteArray &rawLine : lines) {
+        const QByteArray line = rawLine.simplified();
+        if (line.isEmpty()) {
+            continue;
+        }
+
+        const QList<QByteArray> values = line.split(' ');
+        if (values.size() != 2) {
+            continue;
+        }
+
+        bool tempOk = false;
+        bool powerOk = false;
+        const double temperature = values.at(0).toDouble(&tempOk);
+        const double power = values.at(1).toDouble(&powerOk);
+        if (!tempOk || !powerOk || power < 0.0) {
+            continue;
+        }
+
+        stats.temperatureC = temperature;
+        stats.powerW = power;
+        stats.valid = true;
+    }
+
+    return stats;
+}
+
+CpuMemStats::PackageStats CpuMemStatsReader::readPackageStats()
+{
+    ensureTurbostatProcess();
+
+    if (m_turbostatProcess.state() == QProcess::Running) {
+        consumeTurbostatOutput(m_turbostatProcess.readAllStandardOutput());
+    }
+
+    return m_lastPackageStats;
+}
+
+void CpuMemStatsReader::ensureTurbostatProcess()
+{
+    if (m_turbostatProcess.state() != QProcess::NotRunning) {
+        return;
+    }
+
+    m_lastPackageStats = {};
+    m_lastPackageStatsTimer.invalidate();
+
+    if (m_turbostatRestartTimer.isValid() && m_turbostatRestartTimer.elapsed() < 10000) {
+        return;
+    }
+
+    m_turbostatBuffer.clear();
+    m_turbostatRestartTimer.restart();
+    m_turbostatProcess.start(QStringLiteral("turbostat"),
+                             {
+                                 QStringLiteral("--quiet"),
+                                 QStringLiteral("--show"),
+                                 QStringLiteral("PkgTmp,PkgWatt"),
+                                 QStringLiteral("-i"),
+                                 QStringLiteral("1"),
+                             });
+}
+
+void CpuMemStatsReader::consumeTurbostatOutput(const QByteArray &output)
+{
+    if (output.isEmpty()) {
+        return;
+    }
+
+    m_turbostatBuffer.append(output);
+
+    const int lastNewline = m_turbostatBuffer.lastIndexOf('\n');
+    if (lastNewline < 0) {
+        return;
+    }
+
+    const QByteArray completeOutput = m_turbostatBuffer.left(lastNewline + 1);
+    m_turbostatBuffer = m_turbostatBuffer.mid(lastNewline + 1);
+
+    const CpuMemStats::PackageStats stats = parseTurbostatOutput(completeOutput);
+    if (stats.valid) {
+        m_lastPackageStats = stats;
+        m_lastPackageStatsTimer.restart();
+    } else if (m_lastPackageStatsTimer.isValid() && m_lastPackageStatsTimer.elapsed() > 5000) {
+        m_lastPackageStats = {};
+        m_lastPackageStatsTimer.invalidate();
+    }
 }

@@ -44,16 +44,21 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
     const QString memory = QStringLiteral("%1 / %2")
                                .arg(formatMemory(m_stats.memory.usedKb()))
                                .arg(formatMemory(m_stats.memory.totalKb));
-    const QStringList labels = {
+    QStringList labels = {
         QStringLiteral("CPU"),
         QStringLiteral("MEM"),
     };
-    const QStringList values = {
+    QStringList values = {
         QStringLiteral("%1%").arg(m_stats.cpuPercent, 0, 'f', 1),
         QStringLiteral("%1%  %2").arg(m_stats.memory.usedPercent(), 0, 'f', 1).arg(memory),
     };
 
-    const int labelWidth = fontMetrics().horizontalAdvance(QStringLiteral("MEM")) + 16;
+    if (m_stats.package.valid) {
+        labels.append(QStringLiteral("PKG"));
+        values.append(formatPackageStats());
+    }
+
+    const int labelWidth = fontMetrics().horizontalAdvance(QStringLiteral("PKG")) + 16;
     const int rowHeight = fontMetrics().height() + 8;
     const int top = 10;
     const int left = 12;
@@ -76,12 +81,22 @@ QString CpuMemTipsWidget::formatMemory(quint64 kb) const
     return QStringLiteral("%1 GiB").arg(mib / 1024.0, 0, 'f', 1);
 }
 
+QString CpuMemTipsWidget::formatPackageStats() const
+{
+    return QStringLiteral("%1 C  %2 W")
+        .arg(m_stats.package.temperatureC, 0, 'f', 0)
+        .arg(m_stats.package.powerW, 0, 'f', 1);
+}
+
 void CpuMemTipsWidget::updateSize()
 {
     const QString memory = QStringLiteral("100.0%  %1 / %2")
                                .arg(formatMemory(m_stats.memory.usedKb()))
                                .arg(formatMemory(m_stats.memory.totalKb));
-    const int width = qMax(190, fontMetrics().horizontalAdvance(memory) + 64);
-    const int height = (fontMetrics().height() + 8) * 2 + 20;
+    const int memoryWidth = fontMetrics().horizontalAdvance(memory) + 64;
+    const int packageWidth = fontMetrics().horizontalAdvance(formatPackageStats()) + 64;
+    const int width = qMax(190, qMax(memoryWidth, packageWidth));
+    const int rowCount = m_stats.package.valid ? 3 : 2;
+    const int height = (fontMetrics().height() + 8) * rowCount + 20;
     setFixedSize(width, height);
 }

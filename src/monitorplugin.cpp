@@ -21,7 +21,7 @@ const QString CpuMemDockPlugin::pluginName() const
 
 const QString CpuMemDockPlugin::pluginDisplayName() const
 {
-    return QStringLiteral("CPU 与内存");
+    return QStringLiteral("CPU、内存与封装");
 }
 
 void CpuMemDockPlugin::init(PluginProxyInterface *proxyInter)

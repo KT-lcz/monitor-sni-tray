@@ -18,6 +18,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    QString packageText() const;
     QString percentText(double value) const;
 
     CpuMemStats m_stats;

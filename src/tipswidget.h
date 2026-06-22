@@ -23,6 +23,7 @@ protected:
 
 private:
     QString formatMemory(quint64 kb) const;
+    QString formatPackageStats() const;
     void updateSize();
 
     CpuMemStats m_stats;
