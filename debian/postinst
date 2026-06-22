@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        modprobe msr
+        setcap cap_sys_rawio,cap_sys_nice,cap_sys_admin=ep /sbin/turbostat
+        chmod u+s /sbin/turbostat
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
