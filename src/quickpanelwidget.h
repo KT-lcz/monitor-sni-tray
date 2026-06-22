@@ -23,6 +23,7 @@ private:
     QString packageText() const;
     QString percentText(double value) const;
     QString speedText(double bytesPerSecond) const;
+    QString diskText() const;
 
     CpuMemStats m_stats;
 };

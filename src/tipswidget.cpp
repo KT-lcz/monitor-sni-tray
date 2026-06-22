@@ -51,7 +51,6 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("P-FREQ"),
         QStringLiteral("PKG"),
         QStringLiteral("MEM"),
-        QStringLiteral("DOWN"),
     };
     QStringList values = {
         m_stats.cpu.name.isEmpty() ? QStringLiteral("--") : m_stats.cpu.name,
@@ -60,8 +59,20 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         formatFrequency(m_stats.cpu.performanceAverageMHz),
         m_stats.package.valid ? formatPackageStats() : QStringLiteral("--"),
         QStringLiteral("%1%  %2").arg(m_stats.memory.usedPercent(), 0, 'f', 1).arg(memory),
-        m_stats.network.valid ? formatSpeed(m_stats.network.downloadBytesPerSecond) : QStringLiteral("--"),
     };
+
+    if (m_stats.disks.valid()) {
+        for (const CpuMemDiskSnapshot &disk : m_stats.disks.volumes) {
+            labels.append(labels.contains(QStringLiteral("DISK")) ? QString() : QStringLiteral("DISK"));
+            values.append(formatDisk(disk));
+        }
+    } else {
+        labels.append(QStringLiteral("DISK"));
+        values.append(QStringLiteral("--"));
+    }
+
+    labels.append(QStringLiteral("DOWN"));
+    values.append(m_stats.network.valid ? formatSpeed(m_stats.network.downloadBytesPerSecond) : QStringLiteral("--"));
 
     int labelWidth = 0;
     for (const QString &label : labels) {
@@ -76,7 +87,7 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         const QRect labelRect(left, top + i * rowHeight, labelWidth, rowHeight);
         const QRect valueRect(left + labelWidth, top + i * rowHeight, width() - labelWidth - left * 2, rowHeight);
         painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, labels.at(i));
-        painter.drawText(valueRect, Qt::AlignLeft | Qt::AlignVCenter, values.at(i));
+        painter.drawText(valueRect, Qt::AlignLeft | Qt::AlignVCenter, elidedText(values.value(i), valueRect.width()));
     }
 }
 
@@ -103,6 +114,30 @@ QString CpuMemTipsWidget::formatMemory(quint64 kb) const
     return QStringLiteral("%1 GiB").arg(mib / 1024.0, 0, 'f', 1);
 }
 
+QString CpuMemTipsWidget::formatBytes(quint64 bytes) const
+{
+    const double mib = bytes / 1024.0 / 1024.0;
+    if (mib < 1024.0) {
+        return QStringLiteral("%1 MiB").arg(mib, 0, 'f', 0);
+    }
+
+    const double gib = mib / 1024.0;
+    if (gib < 1024.0) {
+        return QStringLiteral("%1 GiB").arg(gib, 0, 'f', 1);
+    }
+
+    return QStringLiteral("%1 TiB").arg(gib / 1024.0, 0, 'f', 1);
+}
+
+QString CpuMemTipsWidget::formatDisk(const CpuMemDiskSnapshot &disk) const
+{
+    return QStringLiteral("%1  %2%  %3 / %4")
+        .arg(disk.name.isEmpty() ? QStringLiteral("--") : disk.name)
+        .arg(disk.usedPercent(), 0, 'f', 1)
+        .arg(formatBytes(disk.usedBytes()))
+        .arg(formatBytes(disk.totalBytes));
+}
+
 QString CpuMemTipsWidget::formatSpeed(double bytesPerSecond) const
 {
     const double kib = bytesPerSecond / 1024.0;
@@ -125,17 +160,32 @@ QString CpuMemTipsWidget::formatPackageStats() const
         .arg(m_stats.package.powerW, 0, 'f', 1);
 }
 
+QString CpuMemTipsWidget::elidedText(const QString &text, int width) const
+{
+    if (width <= 0) {
+        return {};
+    }
+
+    return fontMetrics().elidedText(text, Qt::ElideMiddle, width);
+}
+
 void CpuMemTipsWidget::updateSize()
 {
     const QString memory = QStringLiteral("100.0%  %1 / %2")
                                .arg(formatMemory(m_stats.memory.usedKb()))
                                .arg(formatMemory(m_stats.memory.totalKb));
     const QString cpuName = m_stats.cpu.name.isEmpty() ? QString() : m_stats.cpu.name;
+    int diskWidth = 0;
+    for (const CpuMemDiskSnapshot &disk : m_stats.disks.volumes) {
+        diskWidth = qMax(diskWidth, fontMetrics().horizontalAdvance(formatDisk(disk)) + 64);
+    }
+
     const int memoryWidth = fontMetrics().horizontalAdvance(memory) + 64;
     const int packageWidth = fontMetrics().horizontalAdvance(formatPackageStats()) + 64;
     const int cpuNameWidth = fontMetrics().horizontalAdvance(cpuName) + 96;
-    const int width = qMax(240, qMax(qMax(memoryWidth, packageWidth), cpuNameWidth));
-    const int rowCount = 7;
+    const int width = qMin(520, qMax(260, qMax(qMax(qMax(memoryWidth, packageWidth), cpuNameWidth), diskWidth)));
+    const int diskRowCount = qMax(1, m_stats.disks.volumes.size());
+    const int rowCount = 7 + diskRowCount;
     const int height = (fontMetrics().height() + 8) * rowCount + 20;
     setFixedSize(width, height);
 }

@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QVector>
 #include <QString>
 #include <QProcess>
 #include <QtGlobal>
@@ -28,6 +29,16 @@ struct CpuMemNetworkSnapshot
     bool valid = false;
 };
 
+struct CpuMemDiskSnapshot
+{
+    QString name;
+    quint64 totalBytes = 0;
+    quint64 availableBytes = 0;
+
+    quint64 usedBytes() const;
+    double usedPercent() const;
+};
+
 struct CpuMemStats
 {
     double cpuPercent = 0.0;
@@ -50,6 +61,15 @@ struct CpuMemStats
         double powerW = 0.0;
         bool valid = false;
     } package;
+    struct DiskStats
+    {
+        QVector<CpuMemDiskSnapshot> volumes;
+
+        bool valid() const;
+        quint64 totalBytes() const;
+        quint64 usedBytes() const;
+        double usedPercent() const;
+    } disks;
 };
 
 class CpuMemStatsReader
@@ -62,6 +82,7 @@ public:
     static CpuMemCpuSnapshot readCpuSnapshot();
     static CpuMemMemorySnapshot readMemorySnapshot();
     static CpuMemNetworkSnapshot readNetworkSnapshot();
+    static QVector<CpuMemDiskSnapshot> readDiskSnapshots();
     static CpuMemStats::CpuInfo readCpuInfo();
     static CpuMemStats::PackageStats parseTurbostatOutput(const QByteArray &output);
 

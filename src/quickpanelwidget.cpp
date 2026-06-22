@@ -8,7 +8,7 @@
 CpuMemQuickPanelWidget::CpuMemQuickPanelWidget(QWidget *parent)
     : QWidget(parent)
 {
-    setFixedSize(140, 146);
+    setFixedSize(140, 166);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 }
 
@@ -33,7 +33,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
     valueFont.setPixelSize(10);
 
     const QRect area = rect().adjusted(8, 6, -8, -6);
-    const int rowHeight = area.height() / 7;
+    const int rowHeight = area.height() / 8;
 
     const QStringList labels = {
         QStringLiteral("NAME"),
@@ -42,6 +42,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("P-F"),
         QStringLiteral("PKG"),
         QStringLiteral("MEM"),
+        QStringLiteral("DISK"),
         QStringLiteral("DL"),
     };
     const QStringList values = {
@@ -51,6 +52,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
         frequencyText(m_stats.cpu.performanceAverageMHz),
         packageText(),
         percentText(m_stats.memory.usedPercent()),
+        diskText(),
         m_stats.network.valid ? speedText(m_stats.network.downloadBytesPerSecond) : QStringLiteral("--"),
     };
 
@@ -116,4 +118,13 @@ QString CpuMemQuickPanelWidget::speedText(double bytesPerSecond) const
     }
 
     return QStringLiteral("%1G/s").arg(mib / 1024.0, 0, 'f', 2);
+}
+
+QString CpuMemQuickPanelWidget::diskText() const
+{
+    if (!m_stats.disks.valid()) {
+        return QStringLiteral("--");
+    }
+
+    return percentText(m_stats.disks.usedPercent());
 }

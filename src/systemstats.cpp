@@ -7,9 +7,39 @@
 #include <QHash>
 #include <QProcess>
 #include <QSet>
+#include <QStorageInfo>
 #include <QStringList>
 #include <QVector>
 #include <algorithm>
+
+namespace {
+
+QString rootBlockDeviceName(QString deviceName)
+{
+    if (deviceName.startsWith(QStringLiteral("/dev/"))) {
+        deviceName = QFileInfo(deviceName).fileName();
+    }
+
+    QString current = deviceName;
+    while (!current.isEmpty()) {
+        QFile partitionFile(QStringLiteral("/sys/class/block/%1/partition").arg(current));
+        if (!partitionFile.exists()) {
+            return QFileInfo::exists(QStringLiteral("/sys/class/block/%1").arg(current)) ? current : QString();
+        }
+
+        const QFileInfo parentInfo(QStringLiteral("/sys/class/block/%1/..").arg(current));
+        const QString parent = parentInfo.canonicalFilePath().section('/', -1);
+        if (parent.isEmpty() || parent == current) {
+            return {};
+        }
+
+        current = parent;
+    }
+
+    return {};
+}
+
+} // namespace
 
 quint64 CpuMemMemorySnapshot::usedKb() const
 {
@@ -27,6 +57,59 @@ double CpuMemMemorySnapshot::usedPercent() const
     }
 
     return usedKb() * 100.0 / totalKb;
+}
+
+quint64 CpuMemDiskSnapshot::usedBytes() const
+{
+    if (totalBytes <= availableBytes) {
+        return 0;
+    }
+
+    return totalBytes - availableBytes;
+}
+
+double CpuMemDiskSnapshot::usedPercent() const
+{
+    if (totalBytes == 0) {
+        return 0.0;
+    }
+
+    return usedBytes() * 100.0 / totalBytes;
+}
+
+bool CpuMemStats::DiskStats::valid() const
+{
+    return !volumes.isEmpty();
+}
+
+quint64 CpuMemStats::DiskStats::totalBytes() const
+{
+    quint64 total = 0;
+    for (const CpuMemDiskSnapshot &volume : volumes) {
+        total += volume.totalBytes;
+    }
+
+    return total;
+}
+
+quint64 CpuMemStats::DiskStats::usedBytes() const
+{
+    quint64 used = 0;
+    for (const CpuMemDiskSnapshot &volume : volumes) {
+        used += volume.usedBytes();
+    }
+
+    return used;
+}
+
+double CpuMemStats::DiskStats::usedPercent() const
+{
+    const quint64 total = totalBytes();
+    if (total == 0) {
+        return 0.0;
+    }
+
+    return usedBytes() * 100.0 / total;
 }
 
 CpuMemStatsReader::CpuMemStatsReader()
@@ -57,6 +140,7 @@ CpuMemStats CpuMemStatsReader::sample()
     stats.memory = readMemorySnapshot();
     stats.cpu = readCpuInfo();
     stats.package = readPackageStats();
+    stats.disks.volumes = readDiskSnapshots();
 
     const CpuMemCpuSnapshot currentCpu = readCpuSnapshot();
     if (m_hasLastCpu && currentCpu.total > m_lastCpu.total) {
@@ -190,6 +274,46 @@ CpuMemNetworkSnapshot CpuMemStatsReader::readNetworkSnapshot()
     }
 
     return snapshot;
+}
+
+QVector<CpuMemDiskSnapshot> CpuMemStatsReader::readDiskSnapshots()
+{
+    QHash<QString, CpuMemDiskSnapshot> disksByName;
+    QSet<QString> seenFileSystems;
+
+    const QList<QStorageInfo> volumes = QStorageInfo::mountedVolumes();
+    for (const QStorageInfo &volume : volumes) {
+        if (!volume.isValid() || !volume.isReady() || volume.bytesTotal() <= 0 || volume.bytesAvailable() < 0) {
+            continue;
+        }
+
+        const QString device = QString::fromLocal8Bit(volume.device());
+        if (!device.startsWith(QStringLiteral("/dev/")) || device.startsWith(QStringLiteral("/dev/loop"))) {
+            continue;
+        }
+
+        if (seenFileSystems.contains(device)) {
+            continue;
+        }
+
+        const QString diskName = rootBlockDeviceName(device);
+        if (diskName.isEmpty()) {
+            continue;
+        }
+
+        CpuMemDiskSnapshot &disk = disksByName[diskName];
+        disk.name = diskName;
+        disk.totalBytes += static_cast<quint64>(volume.bytesTotal());
+        disk.availableBytes += static_cast<quint64>(volume.bytesAvailable());
+        seenFileSystems.insert(device);
+    }
+
+    QVector<CpuMemDiskSnapshot> disks = disksByName.values().toVector();
+    std::sort(disks.begin(), disks.end(), [](const CpuMemDiskSnapshot &left, const CpuMemDiskSnapshot &right) {
+        return left.name < right.name;
+    });
+
+    return disks;
 }
 
 CpuMemStats::CpuInfo CpuMemStatsReader::readCpuInfo()

@@ -24,8 +24,11 @@ protected:
 private:
     QString formatFrequency(double mhz) const;
     QString formatMemory(quint64 kb) const;
+    QString formatBytes(quint64 bytes) const;
+    QString formatDisk(const CpuMemDiskSnapshot &disk) const;
     QString formatSpeed(double bytesPerSecond) const;
     QString formatPackageStats() const;
+    QString elidedText(const QString &text, int width) const;
     void updateSize();
 
     CpuMemStats m_stats;

@@ -59,3 +59,21 @@ if(BUILD_STATS_SMOKE_TEST)
     )
     target_link_libraries(stats-smoke-test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 endif()
+
+option(BUILD_WIDGETS_SMOKE_TEST "Build a small widget rendering smoke test executable" ON)
+if(BUILD_WIDGETS_SMOKE_TEST)
+    add_executable(widgets-smoke-test
+        tests/widgets_smoke_test.cpp
+        src/quickpanelwidget.cpp
+        src/quickpanelwidget.h
+        src/systemstats.cpp
+        src/systemstats.h
+        src/tipswidget.cpp
+        src/tipswidget.h
+    )
+    target_link_libraries(widgets-smoke-test PRIVATE
+        Qt${QT_VERSION_MAJOR}::Core
+        Qt${QT_VERSION_MAJOR}::Gui
+        Qt${QT_VERSION_MAJOR}::Widgets
+    )
+endif()

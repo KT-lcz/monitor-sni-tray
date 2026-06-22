@@ -44,6 +44,35 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    for (const CpuMemDiskSnapshot &disk : stats.disks.volumes) {
+        if (disk.name.isEmpty()) {
+            qCritical() << "disk name is empty";
+            return 1;
+        }
+
+        if (disk.totalBytes == 0 || disk.availableBytes > disk.totalBytes) {
+            qCritical() << "disk capacity out of range"
+                        << disk.name
+                        << disk.availableBytes
+                        << disk.totalBytes;
+            return 1;
+        }
+
+        const double usedPercent = disk.usedPercent();
+        if (usedPercent < 0.0 || usedPercent > 100.0) {
+            qCritical() << "disk percent out of range" << disk.name << usedPercent;
+            return 1;
+        }
+    }
+
+    if (stats.disks.valid()) {
+        const double disksPercent = stats.disks.usedPercent();
+        if (disksPercent < 0.0 || disksPercent > 100.0) {
+            qCritical() << "aggregate disk percent out of range" << disksPercent;
+            return 1;
+        }
+    }
+
     const CpuMemStats::PackageStats packageStats = CpuMemStatsReader::parseTurbostatOutput(
         "PkgTmp\tPkgWatt\n"
         "41\t7.15\n"
@@ -73,6 +102,8 @@ int main(int argc, char *argv[])
             << "P_AVG_MHZ:" << stats.cpu.performanceAverageMHz
             << "NET_VALID:" << stats.network.valid
             << "DL_BPS:" << stats.network.downloadBytesPerSecond
+            << "DISKS:" << stats.disks.volumes.size()
+            << "DISK_USED_PERCENT:" << stats.disks.usedPercent()
             << "PKG_VALID:" << stats.package.valid
             << "PKG_TMP:" << stats.package.temperatureC
             << "PKG_WATT:" << stats.package.powerW;
