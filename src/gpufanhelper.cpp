@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
     }
 
     if (mode == "medium") {
-        return writeFile(kPwmEnablePath, "1\n") && writeFile(kPwmPath, "160\n") ? 0 : 1;
+        return writeFile(kPwmEnablePath, "1\n") && writeFile(kPwmPath, "204\n") ? 0 : 1;
     }
 
     if (mode == "full") {
