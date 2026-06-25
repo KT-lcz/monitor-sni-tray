@@ -3,17 +3,20 @@
 #include "../src/monitorwidget.h"
 
 #include <QApplication>
+#include <QDebug>
+#include <QImage>
 #include <QPainter>
 #include <QPixmap>
 #include <QtGlobal>
 
-static void renderWidget(QWidget &widget)
+static QImage renderWidget(QWidget &widget)
 {
     widget.resize(widget.sizeHint().expandedTo(widget.size()));
     QPixmap pixmap(widget.size());
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     widget.render(&painter);
+    return pixmap.toImage();
 }
 
 int main(int argc, char *argv[])
@@ -66,6 +69,27 @@ int main(int argc, char *argv[])
     CpuMemMonitorWidget monitor;
     monitor.setStats(stats);
     renderWidget(monitor);
+
+    CpuMemStats coolerGpuStats = stats;
+    coolerGpuStats.gpu.temperatureC = 40.0;
+    CpuMemMonitorWidget coolerGpuMonitor;
+    coolerGpuMonitor.setStats(coolerGpuStats);
+    const QImage coolerGpuImage = renderWidget(coolerGpuMonitor);
+
+    CpuMemStats hotterGpuStats = stats;
+    hotterGpuStats.gpu.temperatureC = 90.0;
+    CpuMemMonitorWidget hotterGpuMonitor;
+    hotterGpuMonitor.setStats(hotterGpuStats);
+    const QImage hotterGpuImage = renderWidget(hotterGpuMonitor);
+
+    const QColor coolerGpuColor = coolerGpuImage.pixelColor(coolerGpuImage.rect().center());
+    const QColor hotterGpuColor = hotterGpuImage.pixelColor(hotterGpuImage.rect().center());
+    if (coolerGpuColor != hotterGpuColor) {
+        qCritical() << "monitor icon color changed with GPU temperature"
+                    << coolerGpuColor
+                    << hotterGpuColor;
+        return 1;
+    }
 
     return 0;
 }

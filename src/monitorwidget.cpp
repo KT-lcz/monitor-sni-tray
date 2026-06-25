@@ -122,21 +122,13 @@ QColor CpuMemMonitorWidget::foregroundColor() const
 
 QColor CpuMemMonitorWidget::temperatureColor() const
 {
-    if (!m_stats.package.valid && !m_stats.gpu.valid) {
+    if (!m_stats.package.valid) {
         QColor color = foregroundColor();
         color.setAlpha(150);
         return color;
     }
 
-    double sourceTemperature = 0.0;
-    if (m_stats.package.valid) {
-        sourceTemperature = qMax(sourceTemperature, m_stats.package.temperatureC);
-    }
-    if (m_stats.gpu.valid) {
-        sourceTemperature = qMax(sourceTemperature, m_stats.gpu.temperatureC);
-    }
-
-    const double temperature = qBound(10.0, sourceTemperature, 90.0);
+    const double temperature = qBound(10.0, m_stats.package.temperatureC, 90.0);
     if (temperature >= 80.0) {
         return QColor(220, 0, 0);
     }
