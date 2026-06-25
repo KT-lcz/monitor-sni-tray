@@ -14,7 +14,12 @@
 
 namespace {
 
-const QString kGpuHwmonPath = QStringLiteral("/sys/class/drm/card0/device/hwmon/hwmon4");
+struct GpuHwmonSensor
+{
+    QString hwmonPath;
+    qint64 temperatureMilliC = 0;
+    bool valid = false;
+};
 
 qint64 readIntFile(const QString &path, bool *ok = nullptr)
 {
@@ -34,6 +39,81 @@ qint64 readIntFile(const QString &path, bool *ok = nullptr)
     }
 
     return parsed ? value : 0;
+}
+
+bool isPlausibleGpuTemperature(qint64 milliC)
+{
+    return milliC >= 0 && milliC <= 130000;
+}
+
+int temperatureSensorScore(const QString &hwmonPath, const QFileInfo &temperatureFile)
+{
+    int score = 100;
+    const QString inputSuffix = QStringLiteral("_input");
+    const QString fileName = temperatureFile.fileName();
+    const QString baseName = fileName.left(fileName.size() - inputSuffix.size());
+    const QString labelPath = hwmonPath + QLatin1Char('/') + baseName + QStringLiteral("_label");
+
+    QFile labelFile(labelPath);
+    if (labelFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QString label = QString::fromUtf8(labelFile.readAll()).trimmed().toLower();
+        if (label.contains(QStringLiteral("edge")) || label.contains(QStringLiteral("gpu"))) {
+            score -= 40;
+        } else if (label.contains(QStringLiteral("junction")) || label.contains(QStringLiteral("hotspot"))) {
+            score -= 20;
+        }
+    }
+
+    const QString inputPrefix = QStringLiteral("temp");
+    bool indexOk = false;
+    const int index = fileName.mid(inputPrefix.size(), fileName.size() - inputPrefix.size() - inputSuffix.size()).toInt(&indexOk);
+    if (indexOk) {
+        score += index;
+    }
+
+    return score;
+}
+
+GpuHwmonSensor findGpuHwmonSensor()
+{
+    GpuHwmonSensor bestSensor;
+    int bestScore = 100000;
+
+    const QDir drmDir(QStringLiteral("/sys/class/drm"));
+    const QFileInfoList cardDirs = drmDir.entryInfoList({ QStringLiteral("card*") }, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QFileInfo &cardDir : cardDirs) {
+        const QString cardName = cardDir.fileName();
+        bool cardNumberOk = false;
+        cardName.mid(QStringLiteral("card").size()).toInt(&cardNumberOk);
+        if (!cardNumberOk) {
+            continue;
+        }
+
+        const QDir hwmonRoot(cardDir.filePath() + QStringLiteral("/device/hwmon"));
+        const QFileInfoList hwmonDirs = hwmonRoot.entryInfoList({ QStringLiteral("hwmon*") }, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QFileInfo &hwmonDir : hwmonDirs) {
+            const QString hwmonPath = hwmonDir.filePath();
+            const QDir hwmon(hwmonPath);
+            const QFileInfoList temperatureFiles = hwmon.entryInfoList({ QStringLiteral("temp*_input") }, QDir::Files | QDir::Readable, QDir::Name);
+            for (const QFileInfo &temperatureFile : temperatureFiles) {
+                bool tempOk = false;
+                const qint64 tempMilliC = readIntFile(temperatureFile.filePath(), &tempOk);
+                if (!tempOk || !isPlausibleGpuTemperature(tempMilliC)) {
+                    continue;
+                }
+
+                const int score = temperatureSensorScore(hwmonPath, temperatureFile);
+                if (!bestSensor.valid || score < bestScore) {
+                    bestScore = score;
+                    bestSensor.hwmonPath = hwmonPath;
+                    bestSensor.temperatureMilliC = tempMilliC;
+                    bestSensor.valid = true;
+                }
+            }
+        }
+    }
+
+    return bestSensor;
 }
 
 QString rootBlockDeviceName(QString deviceName)
@@ -496,17 +576,18 @@ CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
 {
     CpuMemStats::GpuStats stats;
 
-    bool tempOk = false;
-    const qint64 tempMilliC = readIntFile(kGpuHwmonPath + QStringLiteral("/temp1_input"), &tempOk);
-    if (tempOk) {
-        stats.temperatureC = tempMilliC / 1000.0;
-        stats.valid = true;
+    const GpuHwmonSensor sensor = findGpuHwmonSensor();
+    if (!sensor.valid) {
+        return stats;
     }
 
+    stats.temperatureC = sensor.temperatureMilliC / 1000.0;
+    stats.valid = true;
+
     bool pwmOk = false;
-    const qint64 pwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1"), &pwmOk);
+    const qint64 pwm = readIntFile(sensor.hwmonPath + QStringLiteral("/pwm1"), &pwmOk);
     bool maxOk = false;
-    qint64 maxPwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_max"), &maxOk);
+    qint64 maxPwm = readIntFile(sensor.hwmonPath + QStringLiteral("/pwm1_max"), &maxOk);
     if (!maxOk || maxPwm <= 0) {
         maxPwm = 255;
     }
@@ -520,13 +601,13 @@ CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
     }
 
     bool enableOk = false;
-    const qint64 enable = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_enable"), &enableOk);
+    const qint64 enable = readIntFile(sensor.hwmonPath + QStringLiteral("/pwm1_enable"), &enableOk);
     if (enableOk) {
         stats.automaticFan = (enable == 0);
     }
 
     bool rpmOk = false;
-    const qint64 rpm = readIntFile(kGpuHwmonPath + QStringLiteral("/fan1_input"), &rpmOk);
+    const qint64 rpm = readIntFile(sensor.hwmonPath + QStringLiteral("/fan1_input"), &rpmOk);
     if (rpmOk && rpm > 0) {
         stats.fanRpm = static_cast<int>(rpm);
         stats.rpmValid = true;
