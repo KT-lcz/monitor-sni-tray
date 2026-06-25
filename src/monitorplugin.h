@@ -45,6 +45,7 @@ private Q_SLOTS:
 
 private:
     void loadPlugin();
+    void setGpuFanMode(const QString &mode);
     QIcon buildIcon(Dock::ThemeType themeType) const;
 
     static const QString ItemKey;

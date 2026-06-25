@@ -61,6 +61,20 @@ struct CpuMemStats
         double powerW = 0.0;
         bool valid = false;
     } package;
+    struct GpuStats
+    {
+        double temperatureC = 0.0;
+        int fanPwm = 0;
+        int fanMaxPwm = 255;
+        int fanPercent = 0;
+        int fanRpm = 0;
+        bool automaticFan = false;
+        bool valid = false;
+        bool fanValid = false;
+        bool rpmValid = false;
+
+        QString fanLevel() const;
+    } gpu;
     struct DiskStats
     {
         QVector<CpuMemDiskSnapshot> volumes;
@@ -84,6 +98,7 @@ public:
     static CpuMemNetworkSnapshot readNetworkSnapshot();
     static QVector<CpuMemDiskSnapshot> readDiskSnapshots();
     static CpuMemStats::CpuInfo readCpuInfo();
+    static CpuMemStats::GpuStats readGpuStats();
     static CpuMemStats::PackageStats parseTurbostatOutput(const QByteArray &output);
 
 private:

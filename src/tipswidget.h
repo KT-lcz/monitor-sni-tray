@@ -28,6 +28,7 @@ private:
     QString formatDisk(const CpuMemDiskSnapshot &disk) const;
     QString formatSpeed(double bytesPerSecond) const;
     QString formatPackageStats() const;
+    QString formatGpuStats() const;
     QString elidedText(const QString &text, int width) const;
     void updateSize();
 

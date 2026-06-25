@@ -8,7 +8,7 @@
 CpuMemQuickPanelWidget::CpuMemQuickPanelWidget(QWidget *parent)
     : QWidget(parent)
 {
-    setFixedSize(140, 166);
+    setFixedSize(146, 184);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 }
 
@@ -33,7 +33,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
     valueFont.setPixelSize(10);
 
     const QRect area = rect().adjusted(8, 6, -8, -6);
-    const int rowHeight = area.height() / 8;
+    const int rowHeight = area.height() / 9;
 
     const QStringList labels = {
         QStringLiteral("NAME"),
@@ -41,6 +41,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("P/E"),
         QStringLiteral("P-F"),
         QStringLiteral("PKG"),
+        QStringLiteral("GPU"),
         QStringLiteral("MEM"),
         QStringLiteral("DISK"),
         QStringLiteral("DL"),
@@ -51,6 +52,7 @@ void CpuMemQuickPanelWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("%1/%2").arg(m_stats.cpu.performanceCoreCount).arg(m_stats.cpu.efficiencyCoreCount),
         frequencyText(m_stats.cpu.performanceAverageMHz),
         packageText(),
+        gpuText(),
         percentText(m_stats.memory.usedPercent()),
         diskText(),
         m_stats.network.valid ? speedText(m_stats.network.downloadBytesPerSecond) : QStringLiteral("--"),
@@ -98,6 +100,25 @@ QString CpuMemQuickPanelWidget::packageText() const
     return QStringLiteral("%1C %2W")
         .arg(m_stats.package.temperatureC, 0, 'f', 0)
         .arg(m_stats.package.powerW, 0, 'f', 0);
+}
+
+QString CpuMemQuickPanelWidget::gpuText() const
+{
+    if (!m_stats.gpu.valid) {
+        return QStringLiteral("--");
+    }
+
+    const QString temperature = m_stats.gpu.temperatureC > 0.0
+        ? QStringLiteral("%1C").arg(m_stats.gpu.temperatureC, 0, 'f', 0)
+        : QStringLiteral("--");
+    if (!m_stats.gpu.fanValid) {
+        return temperature;
+    }
+
+    return QStringLiteral("%1 %2 %3%")
+        .arg(temperature)
+        .arg(m_stats.gpu.fanLevel())
+        .arg(m_stats.gpu.fanPercent);
 }
 
 QString CpuMemQuickPanelWidget::percentText(double value) const

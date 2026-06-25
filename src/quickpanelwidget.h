@@ -21,6 +21,7 @@ private:
     QString elidedText(const QString &text, const QFont &font, int width) const;
     QString frequencyText(double mhz) const;
     QString packageText() const;
+    QString gpuText() const;
     QString percentText(double value) const;
     QString speedText(double bytesPerSecond) const;
     QString diskText() const;

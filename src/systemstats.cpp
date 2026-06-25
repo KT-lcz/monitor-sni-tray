@@ -14,6 +14,28 @@
 
 namespace {
 
+const QString kGpuHwmonPath = QStringLiteral("/sys/class/drm/card0/device/hwmon/hwmon4");
+
+qint64 readIntFile(const QString &path, bool *ok = nullptr)
+{
+    if (ok) {
+        *ok = false;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return 0;
+    }
+
+    bool parsed = false;
+    const qint64 value = file.readAll().trimmed().toLongLong(&parsed);
+    if (ok) {
+        *ok = parsed;
+    }
+
+    return parsed ? value : 0;
+}
+
 QString rootBlockDeviceName(QString deviceName)
 {
     if (deviceName.startsWith(QStringLiteral("/dev/"))) {
@@ -112,6 +134,31 @@ double CpuMemStats::DiskStats::usedPercent() const
     return usedBytes() * 100.0 / total;
 }
 
+QString CpuMemStats::GpuStats::fanLevel() const
+{
+    if (!fanValid) {
+        return QStringLiteral("--");
+    }
+
+    if (automaticFan) {
+        return QStringLiteral("自动");
+    }
+
+    if (fanPercent >= 98) {
+        return QStringLiteral("满速");
+    }
+
+    if (fanPercent >= 70) {
+        return QStringLiteral("较高");
+    }
+
+    if (fanPercent >= 45) {
+        return QStringLiteral("中等");
+    }
+
+    return QStringLiteral("较低");
+}
+
 CpuMemStatsReader::CpuMemStatsReader()
     : m_lastCpu(readCpuSnapshot())
     , m_hasLastCpu(m_lastCpu.total > 0)
@@ -140,6 +187,7 @@ CpuMemStats CpuMemStatsReader::sample()
     stats.memory = readMemorySnapshot();
     stats.cpu = readCpuInfo();
     stats.package = readPackageStats();
+    stats.gpu = readGpuStats();
     stats.disks.volumes = readDiskSnapshots();
 
     const CpuMemCpuSnapshot currentCpu = readCpuSnapshot();
@@ -442,6 +490,50 @@ CpuMemStats::CpuInfo CpuMemStatsReader::readCpuInfo()
     }
 
     return info;
+}
+
+CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
+{
+    CpuMemStats::GpuStats stats;
+
+    bool tempOk = false;
+    const qint64 tempMilliC = readIntFile(kGpuHwmonPath + QStringLiteral("/temp1_input"), &tempOk);
+    if (tempOk) {
+        stats.temperatureC = tempMilliC / 1000.0;
+        stats.valid = true;
+    }
+
+    bool pwmOk = false;
+    const qint64 pwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1"), &pwmOk);
+    bool maxOk = false;
+    qint64 maxPwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_max"), &maxOk);
+    if (!maxOk || maxPwm <= 0) {
+        maxPwm = 255;
+    }
+
+    if (pwmOk && pwm >= 0) {
+        stats.fanPwm = static_cast<int>(pwm);
+        stats.fanMaxPwm = static_cast<int>(maxPwm);
+        stats.fanPercent = static_cast<int>(qRound(qBound(0.0, pwm * 100.0 / maxPwm, 100.0)));
+        stats.fanValid = true;
+        stats.valid = true;
+    }
+
+    bool enableOk = false;
+    const qint64 enable = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_enable"), &enableOk);
+    if (enableOk) {
+        stats.automaticFan = (enable == 0);
+    }
+
+    bool rpmOk = false;
+    const qint64 rpm = readIntFile(kGpuHwmonPath + QStringLiteral("/fan1_input"), &rpmOk);
+    if (rpmOk && rpm > 0) {
+        stats.fanRpm = static_cast<int>(rpm);
+        stats.rpmValid = true;
+        stats.valid = true;
+    }
+
+    return stats;
 }
 
 CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArray &output)

@@ -69,8 +69,23 @@ const QString CpuMemDockPlugin::itemContextMenu(const QString &itemKey)
     refreshItem.insert(QStringLiteral("itemText"), QStringLiteral("刷新"));
     refreshItem.insert(QStringLiteral("isActive"), true);
 
+    QMap<QString, QVariant> autoFanItem;
+    autoFanItem.insert(QStringLiteral("itemId"), QStringLiteral("gpu-fan-auto"));
+    autoFanItem.insert(QStringLiteral("itemText"), QStringLiteral("GPU 风扇自动"));
+    autoFanItem.insert(QStringLiteral("isActive"), true);
+
+    QMap<QString, QVariant> mediumFanItem;
+    mediumFanItem.insert(QStringLiteral("itemId"), QStringLiteral("gpu-fan-medium"));
+    mediumFanItem.insert(QStringLiteral("itemText"), QStringLiteral("GPU 风扇中等"));
+    mediumFanItem.insert(QStringLiteral("isActive"), true);
+
+    QMap<QString, QVariant> fullFanItem;
+    fullFanItem.insert(QStringLiteral("itemId"), QStringLiteral("gpu-fan-full"));
+    fullFanItem.insert(QStringLiteral("itemText"), QStringLiteral("GPU 风扇满速"));
+    fullFanItem.insert(QStringLiteral("isActive"), true);
+
     QMap<QString, QVariant> menu;
-    menu.insert(QStringLiteral("items"), QVariantList { refreshItem });
+    menu.insert(QStringLiteral("items"), QVariantList { refreshItem, autoFanItem, mediumFanItem, fullFanItem });
     menu.insert(QStringLiteral("checkableMenu"), false);
     menu.insert(QStringLiteral("singleCheck"), false);
     return QString::fromUtf8(QJsonDocument::fromVariant(menu).toJson(QJsonDocument::Compact));
@@ -82,6 +97,12 @@ void CpuMemDockPlugin::invokedMenuItem(const QString &itemKey, const QString &me
 
     if (itemKey == ItemKey && menuId == QStringLiteral("refresh")) {
         updateStats();
+    } else if (itemKey == ItemKey && menuId == QStringLiteral("gpu-fan-auto")) {
+        setGpuFanMode(QStringLiteral("auto"));
+    } else if (itemKey == ItemKey && menuId == QStringLiteral("gpu-fan-medium")) {
+        setGpuFanMode(QStringLiteral("medium"));
+    } else if (itemKey == ItemKey && menuId == QStringLiteral("gpu-fan-full")) {
+        setGpuFanMode(QStringLiteral("full"));
     }
 }
 
@@ -192,6 +213,12 @@ void CpuMemDockPlugin::loadPlugin()
     m_tipsWidget.reset(new CpuMemTipsWidget);
     updateStats();
     m_timer.start();
+}
+
+void CpuMemDockPlugin::setGpuFanMode(const QString &mode)
+{
+    QProcess::execute(QStringLiteral("/usr/lib/monitor-dock-plugin/gpu-fan-helper"), { mode });
+    updateStats();
 }
 
 QIcon CpuMemDockPlugin::buildIcon(Dock::ThemeType themeType) const

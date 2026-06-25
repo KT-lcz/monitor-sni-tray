@@ -50,6 +50,7 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("P/E"),
         QStringLiteral("P-FREQ"),
         QStringLiteral("PKG"),
+        QStringLiteral("GPU"),
         QStringLiteral("MEM"),
     };
     QStringList values = {
@@ -58,6 +59,7 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("%1 / %2").arg(m_stats.cpu.performanceCoreCount).arg(m_stats.cpu.efficiencyCoreCount),
         formatFrequency(m_stats.cpu.performanceAverageMHz),
         m_stats.package.valid ? formatPackageStats() : QStringLiteral("--"),
+        m_stats.gpu.valid ? formatGpuStats() : QStringLiteral("--"),
         QStringLiteral("%1%  %2").arg(m_stats.memory.usedPercent(), 0, 'f', 1).arg(memory),
     };
 
@@ -160,6 +162,26 @@ QString CpuMemTipsWidget::formatPackageStats() const
         .arg(m_stats.package.powerW, 0, 'f', 1);
 }
 
+QString CpuMemTipsWidget::formatGpuStats() const
+{
+    if (!m_stats.gpu.valid) {
+        return QStringLiteral("--");
+    }
+
+    const QString temperature = m_stats.gpu.temperatureC > 0.0
+        ? QStringLiteral("%1 C").arg(m_stats.gpu.temperatureC, 0, 'f', 0)
+        : QStringLiteral("--");
+    const QString fan = m_stats.gpu.fanValid
+        ? QStringLiteral("%1  %2%  PWM %3/%4")
+              .arg(m_stats.gpu.fanLevel())
+              .arg(m_stats.gpu.fanPercent)
+              .arg(m_stats.gpu.fanPwm)
+              .arg(m_stats.gpu.fanMaxPwm)
+        : QStringLiteral("--");
+    const QString rpm = m_stats.gpu.rpmValid ? QStringLiteral("  %1 RPM").arg(m_stats.gpu.fanRpm) : QString();
+    return temperature + QStringLiteral("  ") + fan + rpm;
+}
+
 QString CpuMemTipsWidget::elidedText(const QString &text, int width) const
 {
     if (width <= 0) {
@@ -182,10 +204,11 @@ void CpuMemTipsWidget::updateSize()
 
     const int memoryWidth = fontMetrics().horizontalAdvance(memory) + 64;
     const int packageWidth = fontMetrics().horizontalAdvance(formatPackageStats()) + 64;
+    const int gpuWidth = fontMetrics().horizontalAdvance(formatGpuStats()) + 64;
     const int cpuNameWidth = fontMetrics().horizontalAdvance(cpuName) + 96;
-    const int width = qMin(520, qMax(260, qMax(qMax(qMax(memoryWidth, packageWidth), cpuNameWidth), diskWidth)));
+    const int width = qMin(560, qMax(260, qMax(qMax(qMax(qMax(memoryWidth, packageWidth), gpuWidth), cpuNameWidth), diskWidth)));
     const int diskRowCount = qMax(1, m_stats.disks.volumes.size());
-    const int rowCount = 7 + diskRowCount;
+    const int rowCount = 8 + diskRowCount;
     const int height = (fontMetrics().height() + 8) * rowCount + 20;
     setFixedSize(width, height);
 }

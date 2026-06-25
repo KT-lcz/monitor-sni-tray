@@ -6,6 +6,10 @@ case "$1" in
         modprobe msr
         setcap cap_sys_rawio,cap_sys_nice,cap_sys_admin=ep /sbin/turbostat
         chmod u+s /sbin/turbostat
+        if [ -x /usr/lib/monitor-dock-plugin/gpu-fan-helper ]; then
+            chown root:root /usr/lib/monitor-dock-plugin/gpu-fan-helper
+            chmod 4755 /usr/lib/monitor-dock-plugin/gpu-fan-helper
+        fi
         ;;
 esac
 

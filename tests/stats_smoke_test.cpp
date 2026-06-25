@@ -44,6 +44,26 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (stats.gpu.valid) {
+        if (stats.gpu.temperatureC < 0.0 || stats.gpu.temperatureC > 130.0) {
+            qCritical() << "gpu temperature out of range" << stats.gpu.temperatureC;
+            return 1;
+        }
+
+        if (stats.gpu.fanValid
+            && (stats.gpu.fanPwm < 0
+                || stats.gpu.fanMaxPwm <= 0
+                || stats.gpu.fanPwm > stats.gpu.fanMaxPwm
+                || stats.gpu.fanPercent < 0
+                || stats.gpu.fanPercent > 100)) {
+            qCritical() << "gpu fan pwm out of range"
+                        << stats.gpu.fanPwm
+                        << stats.gpu.fanMaxPwm
+                        << stats.gpu.fanPercent;
+            return 1;
+        }
+    }
+
     for (const CpuMemDiskSnapshot &disk : stats.disks.volumes) {
         if (disk.name.isEmpty()) {
             qCritical() << "disk name is empty";
@@ -106,6 +126,10 @@ int main(int argc, char *argv[])
             << "DISK_USED_PERCENT:" << stats.disks.usedPercent()
             << "PKG_VALID:" << stats.package.valid
             << "PKG_TMP:" << stats.package.temperatureC
-            << "PKG_WATT:" << stats.package.powerW;
+            << "PKG_WATT:" << stats.package.powerW
+            << "GPU_VALID:" << stats.gpu.valid
+            << "GPU_TMP:" << stats.gpu.temperatureC
+            << "GPU_FAN:" << stats.gpu.fanLevel()
+            << "GPU_FAN_PERCENT:" << stats.gpu.fanPercent;
     return 0;
 }

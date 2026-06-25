@@ -37,6 +37,12 @@ int main(int argc, char *argv[])
     stats.package.valid = true;
     stats.package.temperatureC = 47.0;
     stats.package.powerW = 12.5;
+    stats.gpu.valid = true;
+    stats.gpu.temperatureC = 52.0;
+    stats.gpu.fanValid = true;
+    stats.gpu.fanPwm = 160;
+    stats.gpu.fanMaxPwm = 255;
+    stats.gpu.fanPercent = 63;
 
     stats.disks.volumes.append({
         QStringLiteral("nvme0n1"),

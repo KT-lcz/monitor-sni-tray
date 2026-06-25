@@ -33,6 +33,11 @@ add_library(${PROJECT_NAME} SHARED
     src/tipswidget.h
 )
 
+add_executable(gpu-fan-helper
+    src/gpufanhelper.cpp
+)
+set_target_properties(gpu-fan-helper PROPERTIES AUTOMOC OFF)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
@@ -49,6 +54,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION lib/dde-dock/plugins)
+install(TARGETS gpu-fan-helper RUNTIME DESTINATION lib/monitor-dock-plugin)
 
 option(BUILD_STATS_SMOKE_TEST "Build a small /proc stats smoke test executable" ON)
 if(BUILD_STATS_SMOKE_TEST)
