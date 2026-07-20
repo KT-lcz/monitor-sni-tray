@@ -8,11 +8,53 @@
 
 const QString CpuMemDockPlugin::ItemKey = QStringLiteral("cpu-memory-monitor");
 
+CpuMemStatsWorker::CpuMemStatsWorker(QObject *parent)
+    : QObject(parent)
+{
+}
+
+void CpuMemStatsWorker::sample()
+{
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        return;
+    }
+
+    if (!m_statsReader) {
+        m_statsReader.reset(new CpuMemStatsReader);
+    }
+
+    Q_EMIT statsReady(m_statsReader->sample());
+}
+
+void CpuMemStatsWorker::setGpuFanMode(const QString &mode)
+{
+    QProcess::execute(QStringLiteral("/usr/lib/monitor-dock-plugin/gpu-fan-helper"), { mode });
+    sample();
+}
+
 CpuMemDockPlugin::CpuMemDockPlugin(QObject *parent)
     : QObject(parent)
 {
+    qRegisterMetaType<CpuMemStats>("CpuMemStats");
+
     m_timer.setInterval(1000);
     connect(&m_timer, &QTimer::timeout, this, &CpuMemDockPlugin::updateStats);
+}
+
+CpuMemDockPlugin::~CpuMemDockPlugin()
+{
+    m_timer.stop();
+
+    if (!m_statsThread.isRunning()) {
+        return;
+    }
+
+    m_statsThread.requestInterruption();
+    m_statsThread.quit();
+    if (!m_statsThread.wait(1000)) {
+        m_statsThread.terminate();
+        m_statsThread.wait();
+    }
 }
 
 const QString CpuMemDockPlugin::pluginName() const
@@ -178,7 +220,19 @@ void CpuMemDockPlugin::launchCpuX()
 
 void CpuMemDockPlugin::updateStats()
 {
-    m_stats = m_statsReader.sample();
+    ensureStatsWorker();
+    if (!m_statsWorker || m_samplePending) {
+        return;
+    }
+
+    m_samplePending = true;
+    QMetaObject::invokeMethod(m_statsWorker, "sample", Qt::QueuedConnection);
+}
+
+void CpuMemDockPlugin::applyStats(const CpuMemStats &stats)
+{
+    m_samplePending = false;
+    m_stats = stats;
 
     if (m_itemWidget) {
         m_itemWidget->setStats(m_stats);
@@ -192,7 +246,7 @@ void CpuMemDockPlugin::updateStats()
         m_tipsWidget->setStats(m_stats);
     }
 
-    if (m_proxyInter) {
+    if (m_proxyInter && !pluginIsDisable()) {
         m_proxyInter->itemUpdate(this, ItemKey);
     }
 }
@@ -211,14 +265,33 @@ void CpuMemDockPlugin::loadPlugin()
     connect(m_itemWidget, &CpuMemMonitorWidget::activated, this, &CpuMemDockPlugin::launchCpuX);
     m_quickPanelWidget = new CpuMemQuickPanelWidget;
     m_tipsWidget.reset(new CpuMemTipsWidget);
+    ensureStatsWorker();
     updateStats();
     m_timer.start();
 }
 
+void CpuMemDockPlugin::ensureStatsWorker()
+{
+    if (m_statsWorker) {
+        return;
+    }
+
+    m_statsWorker = new CpuMemStatsWorker;
+    m_statsWorker->moveToThread(&m_statsThread);
+    connect(&m_statsThread, &QThread::finished, m_statsWorker, &QObject::deleteLater);
+    connect(m_statsWorker, &CpuMemStatsWorker::statsReady, this, &CpuMemDockPlugin::applyStats);
+    m_statsThread.start();
+}
+
 void CpuMemDockPlugin::setGpuFanMode(const QString &mode)
 {
-    QProcess::execute(QStringLiteral("/usr/lib/monitor-dock-plugin/gpu-fan-helper"), { mode });
-    updateStats();
+    ensureStatsWorker();
+    if (!m_statsWorker) {
+        return;
+    }
+
+    m_samplePending = true;
+    QMetaObject::invokeMethod(m_statsWorker, "setGpuFanMode", Qt::QueuedConnection, Q_ARG(QString, mode));
 }
 
 QIcon CpuMemDockPlugin::buildIcon(Dock::ThemeType themeType) const

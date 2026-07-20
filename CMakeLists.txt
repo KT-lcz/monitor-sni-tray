@@ -27,6 +27,8 @@ add_library(${PROJECT_NAME} SHARED
     src/monitorwidget.h
     src/quickpanelwidget.cpp
     src/quickpanelwidget.h
+    src/gpuhwmon.cpp
+    src/gpuhwmon.h
     src/systemstats.cpp
     src/systemstats.h
     src/tipswidget.cpp
@@ -35,6 +37,8 @@ add_library(${PROJECT_NAME} SHARED
 
 add_executable(gpu-fan-helper
     src/gpufanhelper.cpp
+    src/gpuhwmon.cpp
+    src/gpuhwmon.h
 )
 set_target_properties(gpu-fan-helper PROPERTIES AUTOMOC OFF)
 
@@ -60,6 +64,8 @@ option(BUILD_STATS_SMOKE_TEST "Build a small /proc stats smoke test executable" 
 if(BUILD_STATS_SMOKE_TEST)
     add_executable(stats-smoke-test
         tests/stats_smoke_test.cpp
+        src/gpuhwmon.cpp
+        src/gpuhwmon.h
         src/systemstats.cpp
         src/systemstats.h
     )
@@ -74,6 +80,8 @@ if(BUILD_WIDGETS_SMOKE_TEST)
         src/monitorwidget.h
         src/quickpanelwidget.cpp
         src/quickpanelwidget.h
+        src/gpuhwmon.cpp
+        src/gpuhwmon.h
         src/systemstats.cpp
         src/systemstats.h
         src/tipswidget.cpp

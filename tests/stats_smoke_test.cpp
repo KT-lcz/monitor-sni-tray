@@ -1,12 +1,88 @@
 #include "../src/systemstats.h"
+#include "../src/gpuhwmon.h"
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QThread>
+
+namespace {
+
+bool writeTestFile(const QString &path, const QByteArray &contents)
+{
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(contents) == contents.size();
+}
+
+bool testGpuHwmonDiscovery()
+{
+    QTemporaryDir temporaryDirectory;
+    if (!temporaryDirectory.isValid()) {
+        qCritical() << "failed to create temporary GPU discovery directory";
+        return false;
+    }
+
+    const QString fallbackPath = temporaryDirectory.path() + QStringLiteral("/card0/device/hwmon/hwmon2");
+    const QString controlledPath = temporaryDirectory.path() + QStringLiteral("/card1/device/hwmon/hwmon7");
+    const QString connectorPath = temporaryDirectory.path() + QStringLiteral("/card1-DP-1/device/hwmon/hwmon8");
+    if (!QDir().mkpath(fallbackPath)
+        || !QDir().mkpath(controlledPath)
+        || !QDir().mkpath(connectorPath)
+        || !writeTestFile(fallbackPath + QStringLiteral("/temp1_input"), "48000\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/temp1_input"), "72000\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/temp1_label"), "junction\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/temp2_input"), "61000\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/temp2_label"), "edge\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/pwm1"), "128\n")
+        || !writeTestFile(controlledPath + QStringLiteral("/pwm1_enable"), "0\n")
+        || !writeTestFile(connectorPath + QStringLiteral("/temp1_input"), "42000\n")
+        || !writeTestFile(connectorPath + QStringLiteral("/pwm1"), "255\n")
+        || !writeTestFile(connectorPath + QStringLiteral("/pwm1_enable"), "1\n")) {
+        qCritical() << "failed to prepare temporary GPU discovery tree";
+        return false;
+    }
+
+    const GpuHwmonSensor controlledSensor = discoverGpuHwmonSensor(temporaryDirectory.path().toStdString(), true);
+    if (controlledSensor.hwmonPath != controlledPath.toStdString()
+        || controlledSensor.temperatureInputPath != (controlledPath + QStringLiteral("/temp2_input")).toStdString()) {
+        qCritical() << "failed to prefer the controllable GPU edge sensor"
+                    << QString::fromStdString(controlledSensor.hwmonPath)
+                    << QString::fromStdString(controlledSensor.temperatureInputPath);
+        return false;
+    }
+
+    if (!QFile::remove(controlledPath + QStringLiteral("/pwm1"))
+        || !QFile::remove(controlledPath + QStringLiteral("/pwm1_enable"))) {
+        qCritical() << "failed to remove temporary fan control files";
+        return false;
+    }
+
+    const GpuHwmonSensor fallbackSensor = discoverGpuHwmonSensor(temporaryDirectory.path().toStdString());
+    if (fallbackSensor.hwmonPath != fallbackPath.toStdString()) {
+        qCritical() << "failed to fall back to a temperature-only GPU sensor"
+                    << QString::fromStdString(fallbackSensor.hwmonPath);
+        return false;
+    }
+
+    if (discoverGpuHwmonSensor(temporaryDirectory.path().toStdString(), true).isValid()) {
+        qCritical() << "fan-control discovery accepted a temperature-only sensor";
+        return false;
+    }
+
+    return true;
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+
+    if (!testGpuHwmonDiscovery()) {
+        return 1;
+    }
 
     CpuMemStatsReader reader;
     QThread::msleep(120);

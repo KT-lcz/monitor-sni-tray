@@ -1,3 +1,5 @@
+#include "gpuhwmon.h"
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -8,9 +10,6 @@
 #include <unistd.h>
 
 namespace {
-
-constexpr const char *kPwmEnablePath = "/sys/class/drm/card0/device/hwmon/hwmon4/pwm1_enable";
-constexpr const char *kPwmPath = "/sys/class/drm/card0/device/hwmon/hwmon4/pwm1";
 
 bool writeFile(const char *path, const char *value)
 {
@@ -33,6 +32,11 @@ bool writeFile(const char *path, const char *value)
     return true;
 }
 
+bool writeFile(const std::string &path, const char *value)
+{
+    return writeFile(path.c_str(), value);
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -53,16 +57,25 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    const GpuHwmonSensor sensor = discoverGpuHwmonSensor("/sys/class/drm", true);
+    if (!sensor.isValid()) {
+        std::cerr << "failed to find GPU hwmon fan control path\n";
+        return 1;
+    }
+
+    const std::string pwmEnablePath = sensor.hwmonPath + "/pwm1_enable";
+    const std::string pwmPath = sensor.hwmonPath + "/pwm1";
+
     if (mode == "auto") {
-        return writeFile(kPwmEnablePath, "0\n") ? 0 : 1;
+        return writeFile(pwmEnablePath, "0\n") ? 0 : 1;
     }
 
     if (mode == "medium") {
-        return writeFile(kPwmEnablePath, "1\n") && writeFile(kPwmPath, "204\n") ? 0 : 1;
+        return writeFile(pwmEnablePath, "1\n") && writeFile(pwmPath, "204\n") ? 0 : 1;
     }
 
     if (mode == "full") {
-        return writeFile(kPwmEnablePath, "1\n") && writeFile(kPwmPath, "255\n") ? 0 : 1;
+        return writeFile(pwmEnablePath, "1\n") && writeFile(pwmPath, "255\n") ? 0 : 1;
     }
 
     return 2;

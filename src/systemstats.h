@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QMetaType>
 #include <QVector>
 #include <QString>
 #include <QProcess>
@@ -86,6 +87,8 @@ struct CpuMemStats
     } disks;
 };
 
+Q_DECLARE_METATYPE(CpuMemStats)
+
 class CpuMemStatsReader
 {
 public:
@@ -98,11 +101,12 @@ public:
     static CpuMemNetworkSnapshot readNetworkSnapshot();
     static QVector<CpuMemDiskSnapshot> readDiskSnapshots();
     static CpuMemStats::CpuInfo readCpuInfo();
-    static CpuMemStats::GpuStats readGpuStats();
     static CpuMemStats::PackageStats parseTurbostatOutput(const QByteArray &output);
 
 private:
     static QString readCpuName();
+    CpuMemStats::GpuStats readGpuStats();
+    void refreshGpuHwmonSensor();
     CpuMemStats::PackageStats readPackageStats();
     void ensureTurbostatProcess();
     void consumeTurbostatOutput(const QByteArray &output);
@@ -112,6 +116,9 @@ private:
     CpuMemNetworkSnapshot m_lastNetwork;
     bool m_hasLastNetwork = false;
     QElapsedTimer m_networkTimer;
+    QString m_gpuHwmonPath;
+    QString m_gpuTemperatureInputPath;
+    QElapsedTimer m_gpuDiscoveryTimer;
     QProcess m_turbostatProcess;
     QElapsedTimer m_turbostatRestartTimer;
     QElapsedTimer m_lastPackageStatsTimer;

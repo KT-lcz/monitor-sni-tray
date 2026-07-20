@@ -1,4 +1,5 @@
 #include "systemstats.h"
+#include "gpuhwmon.h"
 
 #include <QByteArray>
 #include <QDir>
@@ -14,7 +15,16 @@
 
 namespace {
 
-const QString kGpuHwmonPath = QStringLiteral("/sys/class/drm/card0/device/hwmon/hwmon4");
+constexpr qint64 kGpuDiscoveryIntervalMs = 30 * 60 * 1000;
+
+QString decodeMountInfoField(QByteArray value)
+{
+    value.replace("\\040", " ");
+    value.replace("\\011", "\t");
+    value.replace("\\012", "\n");
+    value.replace("\\134", "\\");
+    return QString::fromUtf8(value);
+}
 
 qint64 readIntFile(const QString &path, bool *ok = nullptr)
 {
@@ -166,6 +176,7 @@ CpuMemStatsReader::CpuMemStatsReader()
     , m_hasLastNetwork(m_lastNetwork.valid)
 {
     m_networkTimer.start();
+    refreshGpuHwmonSensor();
 }
 
 CpuMemStatsReader::~CpuMemStatsReader()
@@ -329,13 +340,25 @@ QVector<CpuMemDiskSnapshot> CpuMemStatsReader::readDiskSnapshots()
     QHash<QString, CpuMemDiskSnapshot> disksByName;
     QSet<QString> seenFileSystems;
 
-    const QList<QStorageInfo> volumes = QStorageInfo::mountedVolumes();
-    for (const QStorageInfo &volume : volumes) {
-        if (!volume.isValid() || !volume.isReady() || volume.bytesTotal() <= 0 || volume.bytesAvailable() < 0) {
+    QFile mountInfo(QStringLiteral("/proc/self/mountinfo"));
+    if (!mountInfo.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+
+    while (true) {
+        const QByteArray line = mountInfo.readLine();
+        if (line.isNull()) {
+            break;
+        }
+
+        const QList<QByteArray> sections = line.simplified().split(' ');
+        const int separator = sections.indexOf(QByteArrayLiteral("-"));
+        if (separator < 0 || separator + 2 >= sections.size() || sections.size() < 5) {
             continue;
         }
 
-        const QString device = QString::fromLocal8Bit(volume.device());
+        const QString mountPoint = decodeMountInfoField(sections.at(4));
+        const QString device = decodeMountInfoField(sections.at(separator + 2));
         if (!device.startsWith(QStringLiteral("/dev/")) || device.startsWith(QStringLiteral("/dev/loop"))) {
             continue;
         }
@@ -346,6 +369,11 @@ QVector<CpuMemDiskSnapshot> CpuMemStatsReader::readDiskSnapshots()
 
         const QString diskName = rootBlockDeviceName(device);
         if (diskName.isEmpty()) {
+            continue;
+        }
+
+        const QStorageInfo volume(mountPoint);
+        if (!volume.isValid() || !volume.isReady() || volume.bytesTotal() <= 0 || volume.bytesAvailable() < 0) {
             continue;
         }
 
@@ -494,19 +522,27 @@ CpuMemStats::CpuInfo CpuMemStatsReader::readCpuInfo()
 
 CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
 {
+    if (!m_gpuDiscoveryTimer.isValid() || m_gpuDiscoveryTimer.elapsed() >= kGpuDiscoveryIntervalMs) {
+        refreshGpuHwmonSensor();
+    }
+
     CpuMemStats::GpuStats stats;
 
+    if (m_gpuHwmonPath.isEmpty() || m_gpuTemperatureInputPath.isEmpty()) {
+        return stats;
+    }
+
     bool tempOk = false;
-    const qint64 tempMilliC = readIntFile(kGpuHwmonPath + QStringLiteral("/temp1_input"), &tempOk);
+    const qint64 tempMilliC = readIntFile(m_gpuTemperatureInputPath, &tempOk);
     if (tempOk) {
         stats.temperatureC = tempMilliC / 1000.0;
         stats.valid = true;
     }
 
     bool pwmOk = false;
-    const qint64 pwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1"), &pwmOk);
+    const qint64 pwm = readIntFile(m_gpuHwmonPath + QStringLiteral("/pwm1"), &pwmOk);
     bool maxOk = false;
-    qint64 maxPwm = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_max"), &maxOk);
+    qint64 maxPwm = readIntFile(m_gpuHwmonPath + QStringLiteral("/pwm1_max"), &maxOk);
     if (!maxOk || maxPwm <= 0) {
         maxPwm = 255;
     }
@@ -520,13 +556,13 @@ CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
     }
 
     bool enableOk = false;
-    const qint64 enable = readIntFile(kGpuHwmonPath + QStringLiteral("/pwm1_enable"), &enableOk);
+    const qint64 enable = readIntFile(m_gpuHwmonPath + QStringLiteral("/pwm1_enable"), &enableOk);
     if (enableOk) {
         stats.automaticFan = (enable == 0);
     }
 
     bool rpmOk = false;
-    const qint64 rpm = readIntFile(kGpuHwmonPath + QStringLiteral("/fan1_input"), &rpmOk);
+    const qint64 rpm = readIntFile(m_gpuHwmonPath + QStringLiteral("/fan1_input"), &rpmOk);
     if (rpmOk && rpm > 0) {
         stats.fanRpm = static_cast<int>(rpm);
         stats.rpmValid = true;
@@ -534,6 +570,14 @@ CpuMemStats::GpuStats CpuMemStatsReader::readGpuStats()
     }
 
     return stats;
+}
+
+void CpuMemStatsReader::refreshGpuHwmonSensor()
+{
+    const GpuHwmonSensor sensor = discoverGpuHwmonSensor();
+    m_gpuHwmonPath = QString::fromStdString(sensor.hwmonPath);
+    m_gpuTemperatureInputPath = QString::fromStdString(sensor.temperatureInputPath);
+    m_gpuDiscoveryTimer.start();
 }
 
 CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArray &output)

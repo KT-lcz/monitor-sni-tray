@@ -12,7 +12,26 @@
 #include <QIcon>
 #include <QObject>
 #include <QScopedPointer>
+#include <QThread>
 #include <QTimer>
+
+class CpuMemStatsWorker : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit CpuMemStatsWorker(QObject *parent = nullptr);
+
+public Q_SLOTS:
+    void sample();
+    void setGpuFanMode(const QString &mode);
+
+Q_SIGNALS:
+    void statsReady(const CpuMemStats &stats);
+
+private:
+    QScopedPointer<CpuMemStatsReader> m_statsReader;
+};
 
 class CpuMemDockPlugin : public QObject, public PluginsItemInterfaceV2
 {
@@ -22,6 +41,7 @@ class CpuMemDockPlugin : public QObject, public PluginsItemInterfaceV2
 
 public:
     explicit CpuMemDockPlugin(QObject *parent = nullptr);
+    ~CpuMemDockPlugin() override;
 
     const QString pluginName() const override;
     const QString pluginDisplayName() const override;
@@ -42,9 +62,11 @@ public:
 private Q_SLOTS:
     void launchCpuX();
     void updateStats();
+    void applyStats(const CpuMemStats &stats);
 
 private:
     void loadPlugin();
+    void ensureStatsWorker();
     void setGpuFanMode(const QString &mode);
     QIcon buildIcon(Dock::ThemeType themeType) const;
 
@@ -55,7 +77,9 @@ private:
     CpuMemQuickPanelWidget *m_quickPanelWidget = nullptr;
     QScopedPointer<CpuMemTipsWidget> m_tipsWidget;
     QTimer m_timer;
-    CpuMemStatsReader m_statsReader;
+    QThread m_statsThread;
+    CpuMemStatsWorker *m_statsWorker = nullptr;
+    bool m_samplePending = false;
     CpuMemStats m_stats;
 };
 
