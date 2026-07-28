@@ -1,5 +1,7 @@
 #include "../src/systemstats.h"
+#include "../src/cpuhwmon.h"
 #include "../src/gpuhwmon.h"
+#include "../src/raplreader.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -74,6 +76,75 @@ bool testGpuHwmonDiscovery()
     return true;
 }
 
+bool testCpuHwmonDiscovery()
+{
+    QTemporaryDir temporaryDirectory;
+    if (!temporaryDirectory.isValid()) {
+        qCritical() << "failed to create temporary CPU discovery directory";
+        return false;
+    }
+
+    const QString coretempPath = temporaryDirectory.path() + QStringLiteral("/hwmon2");
+    const QString unrelatedPath = temporaryDirectory.path() + QStringLiteral("/hwmon3");
+    if (!QDir().mkpath(coretempPath)
+        || !QDir().mkpath(unrelatedPath)
+        || !writeTestFile(coretempPath + QStringLiteral("/name"), "coretemp\n")
+        || !writeTestFile(coretempPath + QStringLiteral("/temp1_input"), "47000\n")
+        || !writeTestFile(coretempPath + QStringLiteral("/temp1_label"), "Package id 0\n")
+        || !writeTestFile(coretempPath + QStringLiteral("/temp2_input"), "42000\n")
+        || !writeTestFile(coretempPath + QStringLiteral("/temp2_label"), "Core 0\n")
+        || !writeTestFile(unrelatedPath + QStringLiteral("/name"), "nvme\n")
+        || !writeTestFile(unrelatedPath + QStringLiteral("/temp1_input"), "60000\n")) {
+        qCritical() << "failed to prepare temporary CPU discovery tree";
+        return false;
+    }
+
+    const CpuHwmonSensor sensor = discoverCpuHwmonSensor(temporaryDirectory.path().toStdString());
+    if (sensor.temperatureInputPath != (coretempPath + QStringLiteral("/temp1_input")).toStdString()) {
+        qCritical() << "failed to select CPU package temperature"
+                    << QString::fromStdString(sensor.temperatureInputPath);
+        return false;
+    }
+    return true;
+}
+
+bool testRaplReader()
+{
+    QTemporaryDir temporaryDirectory;
+    if (!temporaryDirectory.isValid()) {
+        qCritical() << "failed to create temporary RAPL directory";
+        return false;
+    }
+
+    const QString packagePath = temporaryDirectory.path() + QStringLiteral("/intel-rapl:0");
+    const QString corePath = temporaryDirectory.path() + QStringLiteral("/intel-rapl:0:0");
+    if (!QDir().mkpath(packagePath)
+        || !QDir().mkpath(corePath)
+        || !writeTestFile(packagePath + QStringLiteral("/name"), "package-0\n")
+        || !writeTestFile(packagePath + QStringLiteral("/energy_uj"), "9000000\n")
+        || !writeTestFile(packagePath + QStringLiteral("/max_energy_range_uj"), "10000000\n")
+        || !writeTestFile(corePath + QStringLiteral("/name"), "core\n")
+        || !writeTestFile(corePath + QStringLiteral("/energy_uj"), "4000000\n")
+        || !writeTestFile(corePath + QStringLiteral("/max_energy_range_uj"), "10000000\n")) {
+        qCritical() << "failed to prepare temporary RAPL tree";
+        return false;
+    }
+
+    std::vector<RaplEnergyZone> zones = discoverPackageRaplZones(temporaryDirectory.path().toStdString());
+    if (zones.size() != 1
+        || !writeTestFile(packagePath + QStringLiteral("/energy_uj"), "1000000\n")) {
+        qCritical() << "failed to discover package RAPL zone" << zones.size();
+        return false;
+    }
+
+    double powerW = 0.0;
+    if (!sampleRaplPower(&zones, 0.5, &powerW) || powerW != 4.0) {
+        qCritical() << "failed to calculate wrapped RAPL power" << powerW;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -81,6 +152,9 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
 
     if (!testGpuHwmonDiscovery()) {
+        return 1;
+    }
+    if (!testCpuHwmonDiscovery() || !testRaplReader()) {
         return 1;
     }
 
@@ -169,22 +243,19 @@ int main(int argc, char *argv[])
         }
     }
 
-    const CpuMemStats::PackageStats packageStats = CpuMemStatsReader::parseTurbostatOutput(
-        "PkgTmp\tPkgWatt\n"
-        "41\t7.15\n"
-        "PkgTmp\tPkgWatt\n"
-        "43\t8.25\n");
-    if (!packageStats.valid || packageStats.temperatureC != 43.0 || packageStats.powerW != 8.25) {
-        qCritical() << "failed to parse turbostat package stats"
-                    << packageStats.valid
-                    << packageStats.temperatureC
+    const CpuMemStats::PackageStats packageStats = CpuMemStatsReader::parsePowerHelperOutput(
+        "7.15\n8.25\n");
+    if (!packageStats.powerValid || packageStats.temperatureValid || packageStats.powerW != 8.25) {
+        qCritical() << "failed to parse power helper stats"
+                    << packageStats.powerValid
                     << packageStats.powerW;
         return 1;
     }
 
-    const CpuMemStats::PackageStats invalidPackageStats = CpuMemStatsReader::parseTurbostatOutput("PkgTmp PkgWatt\n");
-    if (invalidPackageStats.valid) {
-        qCritical() << "invalid turbostat output parsed as valid";
+    const CpuMemStats::PackageStats invalidPackageStats = CpuMemStatsReader::parsePowerHelperOutput(
+        "invalid\nnan\n10001\n");
+    if (invalidPackageStats.valid()) {
+        qCritical() << "invalid power helper output parsed as valid";
         return 1;
     }
 
@@ -200,7 +271,9 @@ int main(int argc, char *argv[])
             << "DL_BPS:" << stats.network.downloadBytesPerSecond
             << "DISKS:" << stats.disks.volumes.size()
             << "DISK_USED_PERCENT:" << stats.disks.usedPercent()
-            << "PKG_VALID:" << stats.package.valid
+            << "PKG_VALID:" << stats.package.valid()
+            << "PKG_TMP_VALID:" << stats.package.temperatureValid
+            << "PKG_WATT_VALID:" << stats.package.powerValid
             << "PKG_TMP:" << stats.package.temperatureC
             << "PKG_WATT:" << stats.package.powerW
             << "GPU_VALID:" << stats.gpu.valid

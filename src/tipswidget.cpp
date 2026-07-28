@@ -58,7 +58,7 @@ void CpuMemTipsWidget::paintEvent(QPaintEvent *event)
         QStringLiteral("%1%").arg(m_stats.cpuPercent, 0, 'f', 1),
         QStringLiteral("%1 / %2").arg(m_stats.cpu.performanceCoreCount).arg(m_stats.cpu.efficiencyCoreCount),
         formatFrequency(m_stats.cpu.performanceAverageMHz),
-        m_stats.package.valid ? formatPackageStats() : QStringLiteral("--"),
+        m_stats.package.valid() ? formatPackageStats() : QStringLiteral("--"),
         m_stats.gpu.valid ? formatGpuStats() : QStringLiteral("--"),
         QStringLiteral("%1%  %2").arg(m_stats.memory.usedPercent(), 0, 'f', 1).arg(memory),
     };
@@ -157,9 +157,14 @@ QString CpuMemTipsWidget::formatSpeed(double bytesPerSecond) const
 
 QString CpuMemTipsWidget::formatPackageStats() const
 {
-    return QStringLiteral("%1 C  %2 W")
-        .arg(m_stats.package.temperatureC, 0, 'f', 0)
-        .arg(m_stats.package.powerW, 0, 'f', 1);
+    QStringList values;
+    if (m_stats.package.temperatureValid) {
+        values << QStringLiteral("%1 C").arg(m_stats.package.temperatureC, 0, 'f', 0);
+    }
+    if (m_stats.package.powerValid) {
+        values << QStringLiteral("%1 W").arg(m_stats.package.powerW, 0, 'f', 1);
+    }
+    return values.isEmpty() ? QStringLiteral("--") : values.join(QStringLiteral("  "));
 }
 
 QString CpuMemTipsWidget::formatGpuStats() const

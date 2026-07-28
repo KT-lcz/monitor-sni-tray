@@ -60,7 +60,10 @@ struct CpuMemStats
     {
         double temperatureC = 0.0;
         double powerW = 0.0;
-        bool valid = false;
+        bool temperatureValid = false;
+        bool powerValid = false;
+
+        bool valid() const;
     } package;
     struct GpuStats
     {
@@ -101,15 +104,16 @@ public:
     static CpuMemNetworkSnapshot readNetworkSnapshot();
     static QVector<CpuMemDiskSnapshot> readDiskSnapshots();
     static CpuMemStats::CpuInfo readCpuInfo();
-    static CpuMemStats::PackageStats parseTurbostatOutput(const QByteArray &output);
+    static CpuMemStats::PackageStats parsePowerHelperOutput(const QByteArray &output);
 
 private:
     static QString readCpuName();
     CpuMemStats::GpuStats readGpuStats();
     void refreshGpuHwmonSensor();
+    void refreshCpuHwmonSensor();
     CpuMemStats::PackageStats readPackageStats();
-    void ensureTurbostatProcess();
-    void consumeTurbostatOutput(const QByteArray &output);
+    void ensurePowerHelperProcess();
+    void consumePowerHelperOutput(const QByteArray &output);
 
     CpuMemCpuSnapshot m_lastCpu;
     bool m_hasLastCpu = false;
@@ -119,10 +123,12 @@ private:
     QString m_gpuHwmonPath;
     QString m_gpuTemperatureInputPath;
     QElapsedTimer m_gpuDiscoveryTimer;
-    QProcess m_turbostatProcess;
-    QElapsedTimer m_turbostatRestartTimer;
-    QElapsedTimer m_lastPackageStatsTimer;
-    QByteArray m_turbostatBuffer;
+    QString m_cpuTemperatureInputPath;
+    QElapsedTimer m_cpuDiscoveryTimer;
+    QProcess m_powerHelperProcess;
+    QElapsedTimer m_powerHelperRestartTimer;
+    QElapsedTimer m_lastPowerStatsTimer;
+    QByteArray m_powerHelperBuffer;
     CpuMemStats::PackageStats m_lastPackageStats;
 };
 

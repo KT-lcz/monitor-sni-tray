@@ -948,11 +948,13 @@ QString MonitorTrayApplication::menuLabel(int itemId) const
             .arg(m_stats.cpu.efficiencyCoreCount)
             .arg(m_stats.cpu.performanceAverageMHz, 0, 'f', 0);
     case 4:
-        return m_stats.package.valid
-            ? QStringLiteral("CPU 温度：%1 °C    功耗：%2 W")
-                  .arg(m_stats.package.temperatureC, 0, 'f', 0)
-                  .arg(m_stats.package.powerW, 0, 'f', 1)
-            : QStringLiteral("CPU 温度 / 功耗：--");
+        return QStringLiteral("CPU 温度：%1    功耗：%2")
+            .arg(m_stats.package.temperatureValid
+                     ? QStringLiteral("%1 °C").arg(m_stats.package.temperatureC, 0, 'f', 0)
+                     : unavailable)
+            .arg(m_stats.package.powerValid
+                     ? QStringLiteral("%1 W").arg(m_stats.package.powerW, 0, 'f', 1)
+                     : unavailable);
     case 6:
         return m_stats.memory.totalKb > 0
             ? QStringLiteral("内存：%1 %    %2 / %3")
@@ -1124,10 +1126,15 @@ QString MonitorTrayApplication::toolTipText() const
     lines << QStringLiteral("CPU %1%    内存 %2%")
                  .arg(m_stats.cpuPercent, 0, 'f', 1)
                  .arg(m_stats.memory.usedPercent(), 0, 'f', 1);
-    if (m_stats.package.valid) {
-        lines << QStringLiteral("CPU %1 °C    %2 W")
-                     .arg(m_stats.package.temperatureC, 0, 'f', 0)
-                     .arg(m_stats.package.powerW, 0, 'f', 1);
+    if (m_stats.package.valid()) {
+        QStringList packageParts;
+        if (m_stats.package.temperatureValid) {
+            packageParts << QStringLiteral("%1 °C").arg(m_stats.package.temperatureC, 0, 'f', 0);
+        }
+        if (m_stats.package.powerValid) {
+            packageParts << QStringLiteral("%1 W").arg(m_stats.package.powerW, 0, 'f', 1);
+        }
+        lines << QStringLiteral("CPU %1").arg(packageParts.join(QStringLiteral("    ")));
     }
     if (m_stats.gpu.valid) {
         QString gpu = QStringLiteral("GPU %1 °C").arg(m_stats.gpu.temperatureC, 0, 'f', 0);

@@ -36,7 +36,7 @@ void CpuMemMonitorWidget::paintEvent(QPaintEvent *event)
 
     const QRectF area = contentRect();
     QColor pinColor = fg;
-    pinColor.setAlpha((m_stats.package.valid || m_stats.gpu.valid) ? 150 : 105);
+    pinColor.setAlpha((m_stats.package.temperatureValid || m_stats.gpu.valid) ? 150 : 105);
 
     painter.setPen(QPen(pinColor, 1.2, Qt::SolidLine, Qt::RoundCap));
     const qreal left = area.left();
@@ -61,8 +61,8 @@ void CpuMemMonitorWidget::paintEvent(QPaintEvent *event)
     painter.setBrush(heatColor);
     painter.drawRoundedRect(area, 2, 2);
 
-    QColor coreColor = heatColor.lighter((m_stats.package.valid || m_stats.gpu.valid) ? 132 : 115);
-    coreColor.setAlpha((m_stats.package.valid || m_stats.gpu.valid) ? 220 : 90);
+    QColor coreColor = heatColor.lighter((m_stats.package.temperatureValid || m_stats.gpu.valid) ? 132 : 115);
+    coreColor.setAlpha((m_stats.package.temperatureValid || m_stats.gpu.valid) ? 220 : 90);
     painter.setPen(Qt::NoPen);
     painter.setBrush(coreColor);
     painter.drawRoundedRect(area.adjusted(3, 3, -3, -3), 1.2, 1.2);
@@ -122,7 +122,7 @@ QColor CpuMemMonitorWidget::foregroundColor() const
 
 QColor CpuMemMonitorWidget::temperatureColor() const
 {
-    if (!m_stats.package.valid) {
+    if (!m_stats.package.temperatureValid) {
         QColor color = foregroundColor();
         color.setAlpha(150);
         return color;

@@ -3,6 +3,9 @@ monitor-dock-plugin (0.3.0-1) unstable; urgency=medium
   * Show live hardware information directly in the tray menu.
   * Make both primary and context tray interactions use the SNI menu.
   * Remove the CPU-X launch behavior and runtime dependency.
+  * Read CPU temperature from hwmon without elevated privileges.
+  * Read RAPL power through a capability-limited package helper.
+  * Remove the obsolete broad turbostat capabilities on upgrade.
 
  -- lichangze <lichangze512@gmail.com>  Tue, 28 Jul 2026 12:00:00 +0800
 

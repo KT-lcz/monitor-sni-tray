@@ -93,13 +93,18 @@ QString CpuMemQuickPanelWidget::frequencyText(double mhz) const
 
 QString CpuMemQuickPanelWidget::packageText() const
 {
-    if (!m_stats.package.valid) {
+    if (!m_stats.package.valid()) {
         return QStringLiteral("--");
     }
 
-    return QStringLiteral("%1C %2W")
-        .arg(m_stats.package.temperatureC, 0, 'f', 0)
-        .arg(m_stats.package.powerW, 0, 'f', 0);
+    QStringList values;
+    if (m_stats.package.temperatureValid) {
+        values << QStringLiteral("%1C").arg(m_stats.package.temperatureC, 0, 'f', 0);
+    }
+    if (m_stats.package.powerValid) {
+        values << QStringLiteral("%1W").arg(m_stats.package.powerW, 0, 'f', 0);
+    }
+    return values.join(QLatin1Char(' '));
 }
 
 QString CpuMemQuickPanelWidget::gpuText() const

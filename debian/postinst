@@ -3,10 +3,21 @@ set -e
 
 case "$1" in
     configure)
-        modprobe msr 2>/dev/null || true
-        monitor_turbostat="$(command -v turbostat 2>/dev/null || true)"
-        if [ -n "$monitor_turbostat" ]; then
-            setcap cap_sys_rawio,cap_sys_nice,cap_sys_admin=ep "$monitor_turbostat" || true
+        legacy_turbostat="$(command -v turbostat 2>/dev/null || true)"
+        if [ -n "$legacy_turbostat" ]; then
+            legacy_capabilities="$(getcap "$legacy_turbostat" 2>/dev/null || true)"
+            case "$legacy_capabilities" in
+                *"cap_sys_rawio,cap_sys_admin,cap_sys_nice=ep"*)
+                    setcap -r "$legacy_turbostat" \
+                        || echo "warning: legacy turbostat capabilities could not be removed" >&2
+                    ;;
+            esac
+        fi
+
+        monitor_power_helper="/usr/libexec/monitor-power-helper"
+        if [ -x "$monitor_power_helper" ]; then
+            setcap cap_dac_read_search=ep "$monitor_power_helper" \
+                || echo "warning: CPU power monitoring capability could not be configured" >&2
         fi
         ;;
 esac

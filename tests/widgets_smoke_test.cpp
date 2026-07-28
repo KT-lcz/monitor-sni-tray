@@ -37,7 +37,8 @@ int main(int argc, char *argv[])
     stats.memory.availableKb = 12ULL * 1024ULL * 1024ULL;
     stats.network.valid = true;
     stats.network.downloadBytesPerSecond = 2.5 * 1024.0 * 1024.0;
-    stats.package.valid = true;
+    stats.package.temperatureValid = true;
+    stats.package.powerValid = true;
     stats.package.temperatureC = 47.0;
     stats.package.powerW = 12.5;
     stats.gpu.valid = true;

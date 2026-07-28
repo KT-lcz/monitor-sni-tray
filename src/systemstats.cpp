@@ -1,7 +1,9 @@
 #include "systemstats.h"
+#include "cpuhwmon.h"
 #include "gpuhwmon.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
@@ -16,6 +18,27 @@
 namespace {
 
 constexpr qint64 kGpuDiscoveryIntervalMs = 30 * 60 * 1000;
+constexpr qint64 kCpuDiscoveryIntervalMs = 30 * 60 * 1000;
+
+#ifndef MONITOR_POWER_HELPER_PATH
+#define MONITOR_POWER_HELPER_PATH "monitor-power-helper"
+#endif
+
+QString powerHelperPath()
+{
+    const QString overridePath = qEnvironmentVariable("MONITOR_POWER_HELPER");
+    if (!overridePath.isEmpty()) {
+        return overridePath;
+    }
+
+    const QString adjacentPath = QCoreApplication::applicationDirPath()
+        + QStringLiteral("/monitor-power-helper");
+    if (QFileInfo::exists(adjacentPath)) {
+        return adjacentPath;
+    }
+
+    return QStringLiteral(MONITOR_POWER_HELPER_PATH);
+}
 
 QString decodeMountInfoField(QByteArray value)
 {
@@ -109,6 +132,11 @@ double CpuMemDiskSnapshot::usedPercent() const
     return usedBytes() * 100.0 / totalBytes;
 }
 
+bool CpuMemStats::PackageStats::valid() const
+{
+    return temperatureValid || powerValid;
+}
+
 bool CpuMemStats::DiskStats::valid() const
 {
     return !volumes.isEmpty();
@@ -177,18 +205,19 @@ CpuMemStatsReader::CpuMemStatsReader()
 {
     m_networkTimer.start();
     refreshGpuHwmonSensor();
+    refreshCpuHwmonSensor();
 }
 
 CpuMemStatsReader::~CpuMemStatsReader()
 {
-    if (m_turbostatProcess.state() == QProcess::NotRunning) {
+    if (m_powerHelperProcess.state() == QProcess::NotRunning) {
         return;
     }
 
-    m_turbostatProcess.terminate();
-    if (!m_turbostatProcess.waitForFinished(100)) {
-        m_turbostatProcess.kill();
-        m_turbostatProcess.waitForFinished(100);
+    m_powerHelperProcess.terminate();
+    if (!m_powerHelperProcess.waitForFinished(100)) {
+        m_powerHelperProcess.kill();
+        m_powerHelperProcess.waitForFinished(100);
     }
 }
 
@@ -580,7 +609,14 @@ void CpuMemStatsReader::refreshGpuHwmonSensor()
     m_gpuDiscoveryTimer.start();
 }
 
-CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArray &output)
+void CpuMemStatsReader::refreshCpuHwmonSensor()
+{
+    const CpuHwmonSensor sensor = discoverCpuHwmonSensor();
+    m_cpuTemperatureInputPath = QString::fromStdString(sensor.temperatureInputPath);
+    m_cpuDiscoveryTimer.start();
+}
+
+CpuMemStats::PackageStats CpuMemStatsReader::parsePowerHelperOutput(const QByteArray &output)
 {
     CpuMemStats::PackageStats stats;
     const QList<QByteArray> lines = output.split('\n');
@@ -590,22 +626,14 @@ CpuMemStats::PackageStats CpuMemStatsReader::parseTurbostatOutput(const QByteArr
             continue;
         }
 
-        const QList<QByteArray> values = line.split(' ');
-        if (values.size() != 2) {
-            continue;
-        }
-
-        bool tempOk = false;
         bool powerOk = false;
-        const double temperature = values.at(0).toDouble(&tempOk);
-        const double power = values.at(1).toDouble(&powerOk);
-        if (!tempOk || !powerOk || power < 0.0) {
+        const double power = line.toDouble(&powerOk);
+        if (!powerOk || !qIsFinite(power) || power < 0.0 || power > 10000.0) {
             continue;
         }
 
-        stats.temperatureC = temperature;
         stats.powerW = power;
-        stats.valid = true;
+        stats.powerValid = true;
     }
 
     return stats;
@@ -682,62 +710,76 @@ QString CpuMemStatsReader::readCpuName()
 
 CpuMemStats::PackageStats CpuMemStatsReader::readPackageStats()
 {
-    ensureTurbostatProcess();
+    ensurePowerHelperProcess();
 
-    if (m_turbostatProcess.state() == QProcess::Running) {
-        consumeTurbostatOutput(m_turbostatProcess.readAllStandardOutput());
+    if (m_powerHelperProcess.state() == QProcess::Running) {
+        consumePowerHelperOutput(m_powerHelperProcess.readAllStandardOutput());
     }
 
-    return m_lastPackageStats;
+    CpuMemStats::PackageStats stats = m_lastPackageStats;
+    if (m_cpuTemperatureInputPath.isEmpty()
+        || !m_cpuDiscoveryTimer.isValid()
+        || m_cpuDiscoveryTimer.elapsed() >= kCpuDiscoveryIntervalMs) {
+        refreshCpuHwmonSensor();
+    }
+
+    bool temperatureOk = false;
+    qint64 temperatureMilliC = readIntFile(m_cpuTemperatureInputPath, &temperatureOk);
+    if (!temperatureOk) {
+        refreshCpuHwmonSensor();
+        temperatureMilliC = readIntFile(m_cpuTemperatureInputPath, &temperatureOk);
+    }
+    if (temperatureOk && temperatureMilliC >= 0 && temperatureMilliC <= 130000) {
+        stats.temperatureC = temperatureMilliC / 1000.0;
+        stats.temperatureValid = true;
+    }
+
+    return stats;
 }
 
-void CpuMemStatsReader::ensureTurbostatProcess()
+void CpuMemStatsReader::ensurePowerHelperProcess()
 {
-    if (m_turbostatProcess.state() != QProcess::NotRunning) {
+    if (m_powerHelperProcess.state() != QProcess::NotRunning) {
         return;
     }
 
-    m_lastPackageStats = {};
-    m_lastPackageStatsTimer.invalidate();
+    m_lastPackageStats.powerW = 0.0;
+    m_lastPackageStats.powerValid = false;
+    m_lastPowerStatsTimer.invalidate();
 
-    if (m_turbostatRestartTimer.isValid() && m_turbostatRestartTimer.elapsed() < 10000) {
+    if (m_powerHelperRestartTimer.isValid() && m_powerHelperRestartTimer.elapsed() < 10000) {
         return;
     }
 
-    m_turbostatBuffer.clear();
-    m_turbostatRestartTimer.restart();
-    m_turbostatProcess.start(QStringLiteral("turbostat"),
-                             {
-                                 QStringLiteral("--quiet"),
-                                 QStringLiteral("--show"),
-                                 QStringLiteral("PkgTmp,PkgWatt"),
-                                 QStringLiteral("-i"),
-                                 QStringLiteral("1"),
-                             });
+    m_powerHelperBuffer.clear();
+    m_powerHelperRestartTimer.restart();
+    m_powerHelperProcess.start(powerHelperPath(), {});
 }
 
-void CpuMemStatsReader::consumeTurbostatOutput(const QByteArray &output)
+void CpuMemStatsReader::consumePowerHelperOutput(const QByteArray &output)
 {
     if (output.isEmpty()) {
         return;
     }
 
-    m_turbostatBuffer.append(output);
+    m_powerHelperBuffer.append(output);
 
-    const int lastNewline = m_turbostatBuffer.lastIndexOf('\n');
+    const int lastNewline = m_powerHelperBuffer.lastIndexOf('\n');
     if (lastNewline < 0) {
         return;
     }
 
-    const QByteArray completeOutput = m_turbostatBuffer.left(lastNewline + 1);
-    m_turbostatBuffer = m_turbostatBuffer.mid(lastNewline + 1);
+    const QByteArray completeOutput = m_powerHelperBuffer.left(lastNewline + 1);
+    m_powerHelperBuffer = m_powerHelperBuffer.mid(lastNewline + 1);
 
-    const CpuMemStats::PackageStats stats = parseTurbostatOutput(completeOutput);
-    if (stats.valid) {
-        m_lastPackageStats = stats;
-        m_lastPackageStatsTimer.restart();
-    } else if (m_lastPackageStatsTimer.isValid() && m_lastPackageStatsTimer.elapsed() > 5000) {
-        m_lastPackageStats = {};
-        m_lastPackageStatsTimer.invalidate();
+    const CpuMemStats::PackageStats stats = parsePowerHelperOutput(completeOutput);
+    if (stats.powerValid) {
+        m_lastPackageStats.powerW = stats.powerW;
+        m_lastPackageStats.powerValid = true;
+        m_lastPowerStatsTimer.restart();
+    } else if (m_lastPowerStatsTimer.isValid() && m_lastPowerStatsTimer.elapsed() > 5000) {
+        m_lastPackageStats.powerW = 0.0;
+        m_lastPackageStats.powerValid = false;
+        m_lastPowerStatsTimer.invalidate();
     }
 }

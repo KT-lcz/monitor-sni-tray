@@ -16,8 +16,7 @@ Architecture: any
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
- libcap2-bin,
- linux-tools-common | linux-cpupower
+ libcap2-bin
 Conflicts: dde-dock-monitor-plugin
 Replaces: dde-dock-monitor-plugin
 Description: SNI system monitor tray application
