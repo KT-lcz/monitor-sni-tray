@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(monitor-dock-plugin LANGUAGES CXX)
+project(monitor-sni-tray LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -15,50 +17,28 @@ else()
     set(QT_VERSION_MAJOR 5)
 endif()
 find_package(PkgConfig REQUIRED)
+pkg_check_modules(DBus REQUIRED IMPORTED_TARGET dbus-1)
 
-pkg_check_modules(DdeDockInterface REQUIRED dde-dock)
-
-add_definitions(-DQT_PLUGIN)
-
-add_library(${PROJECT_NAME} SHARED
-    src/monitorplugin.cpp
-    src/monitorplugin.h
-    src/monitorwidget.cpp
-    src/monitorwidget.h
-    src/quickpanelwidget.cpp
-    src/quickpanelwidget.h
+add_executable(${PROJECT_NAME}
+    src/main.cpp
+    src/trayapplication.cpp
+    src/trayapplication.h
     src/gpuhwmon.cpp
     src/gpuhwmon.h
     src/systemstats.cpp
     src/systemstats.h
-    src/tipswidget.cpp
-    src/tipswidget.h
-)
-
-add_executable(gpu-fan-helper
-    src/gpufanhelper.cpp
-    src/gpuhwmon.cpp
-    src/gpuhwmon.h
-)
-set_target_properties(gpu-fan-helper PROPERTIES AUTOMOC OFF)
-
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON
-)
-
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${DdeDockInterface_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::Widgets
+    PkgConfig::DBus
 )
 
-install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION lib/dde-dock/plugins)
-install(TARGETS gpu-fan-helper RUNTIME DESTINATION lib/monitor-dock-plugin)
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES assets/monitor-sni-tray.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES assets/monitor-sni-tray.desktop DESTINATION /etc/xdg/autostart)
 
 option(BUILD_STATS_SMOKE_TEST "Build a small /proc stats smoke test executable" ON)
 if(BUILD_STATS_SMOKE_TEST)
@@ -72,7 +52,7 @@ if(BUILD_STATS_SMOKE_TEST)
     target_link_libraries(stats-smoke-test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 endif()
 
-option(BUILD_WIDGETS_SMOKE_TEST "Build a small widget rendering smoke test executable" ON)
+option(BUILD_WIDGETS_SMOKE_TEST "Build the legacy widget rendering smoke test" ON)
 if(BUILD_WIDGETS_SMOKE_TEST)
     add_executable(widgets-smoke-test
         tests/widgets_smoke_test.cpp

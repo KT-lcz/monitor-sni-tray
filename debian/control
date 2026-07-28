@@ -5,9 +5,9 @@ Maintainer: lichangze <lichangze512@gmail.com>
 Build-Depends:
  cmake,
  debhelper-compat (= 13),
+ libdbus-1-dev,
  pkg-config,
- qt6-base-dev | qtbase5-dev,
- dde-tray-loader-dev | dde-dock-dev
+ qt6-base-dev | qtbase5-dev
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 
@@ -16,12 +16,10 @@ Architecture: any
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
- dde-tray-loader,
- cpu-x,
  libcap2-bin,
- linux-cpupower
+ linux-tools-common | linux-cpupower
 Conflicts: dde-dock-monitor-plugin
 Replaces: dde-dock-monitor-plugin
-Description: system monitor plugin for DDE Dock
- A DDE Dock plugin that shows current CPU usage and memory usage on the
- desktop taskbar.
+Description: SNI system monitor tray application
+ A StatusNotifierItem tray application that shows CPU, memory, disk,
+ network, temperature, power and GPU fan information.

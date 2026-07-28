@@ -6,4 +6,4 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 	dh $@ --buildsystem=cmake
 
 override_dh_auto_configure:
-	dh_auto_configure -- -DBUILD_STATS_SMOKE_TEST=OFF
+	dh_auto_configure -- -DBUILD_STATS_SMOKE_TEST=OFF -DBUILD_WIDGETS_SMOKE_TEST=OFF

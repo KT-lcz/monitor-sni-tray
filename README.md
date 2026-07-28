@@ -1,19 +1,45 @@
-# monitor-dock-plugin
+# monitor-sni-tray
 
-一个 DDE Dock 插件，用于在任务栏查看当前 CPU 使用率、内存占用、所有本地硬盘使用情况、CPU 封装温度、封装功耗、CPU 信息和网络下载速度。
+一个独立运行的系统监控托盘程序。程序直接在 session D-Bus 上导出
+`org.kde.StatusNotifierItem`，并向 `org.kde.StatusNotifierWatcher` 注册，支持
+DDE、KDE Plasma 等提供 SNI 托盘宿主的桌面环境，不再构建或加载 dde-dock `.so` 插件。
 
-CPU 封装温度和功耗来自 `turbostat --quiet --show PkgTmp,PkgWatt -i 1`。如果系统没有安装 `turbostat`，或者当前环境没有读取相关硬件计数器的权限，该展示项会保持为空。
+托盘 Tooltip 每秒更新 CPU、内存、磁盘、下载速度、CPU 温度/功耗以及 GPU
+温度和风扇状态。点击托盘后直接显示硬件信息菜单，不启动终端或 CPU-X。程序
+同时导出 `com.canonical.dbusmenu`，菜单中的数据也会每秒刷新。
 
-CPU 名称来自 `/proc/cpuinfo`。大小核数量和性能核平均频率来自 `/sys/devices/system/cpu/cpufreq/policy*`，按最大频率档位的主要断层区分性能核和能效核；无明显断层时按同构 CPU 处理。硬盘使用情况来自 Qt 的挂载卷信息，按 `/sys/class/block` 归并到 `lsblk` 中的硬件块设备名，例如 `nvme0n1`、`nvme1n1`。下载速度来自 `/proc/net/dev` 中非 loopback 网卡的接收字节差值。
+CPU 封装温度和功耗来自 `turbostat --quiet --show PkgTmp,PkgWatt -i 1`。如果系统
+没有安装 `turbostat`，或者当前用户没有读取硬件计数器的权限，对应信息不会显示。
+GPU 信息来自 `/sys/class/drm/*/device/hwmon`，磁盘信息来自系统挂载卷，网络速度
+来自 `/proc/net/dev`。
 
-左键点击 Dock 插件会启动 `cpu-x`，Debian 包依赖中包含 `cpu-x`。
+## 依赖
 
-## 构建
+Debian/Ubuntu 构建依赖：
+
+```bash
+sudo apt install build-essential cmake pkg-config qt6-base-dev libdbus-1-dev
+```
+
+运行期可选/功能依赖：
+
+```bash
+sudo apt install linux-tools-common libcap2-bin
+```
+
+部分发行版将 `turbostat` 放在 `linux-cpupower` 或与当前内核版本对应的
+`linux-tools-$(uname -r)` 中。
+
+## 构建和运行
 
 ```bash
 cmake -S . -B build
 cmake --build build
+./build/monitor-sni-tray
 ```
+
+桌面环境必须正在运行 `org.kde.StatusNotifierWatcher`。如果托盘宿主晚于本程序
+启动，程序会监听其上线并自动重新注册。
 
 ## 安装
 
@@ -21,13 +47,21 @@ cmake --build build
 sudo cmake --install build
 ```
 
-安装后重启 DDE Dock 或重新登录，使插件被加载。
+安装内容包括：
+
+- `/usr/local/bin/monitor-sni-tray`
+- `/usr/local/share/applications/monitor-sni-tray.desktop`
+- `/etc/xdg/autostart/monitor-sni-tray.desktop`
+
+默认会通过 XDG autostart 随桌面会话启动。CMake 默认前缀是 `/usr/local`；打包时
+Debhelper 会使用 `/usr`。
 
 ## Debian 打包
 
 ```bash
 dpkg-buildpackage -us -uc -b
-sudo apt install ../monitor-dock-plugin_0.1.0-1_$(dpkg --print-architecture).deb
+sudo apt install ../monitor-dock-plugin_0.3.0-1_$(dpkg --print-architecture).deb
 ```
 
-deb 包会把插件安装到 `/usr/lib/dde-dock/plugins/libmonitor-dock-plugin.so`。
+Deb 包安装的是独立可执行程序 `/usr/bin/monitor-sni-tray`，不再向
+`/usr/lib/dde-dock/plugins` 安装共享库。

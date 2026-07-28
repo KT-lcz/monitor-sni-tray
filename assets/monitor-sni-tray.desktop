@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Hardware Monitor Tray
+Name[zh_CN]=硬件监控托盘
+Comment=Show CPU, memory, disk, network and temperature information in an SNI tray
+Comment[zh_CN]=在 SNI 托盘中显示 CPU、内存、磁盘、网络和温度信息
+Exec=monitor-sni-tray
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

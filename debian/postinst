@@ -3,12 +3,10 @@ set -e
 
 case "$1" in
     configure)
-        modprobe msr
-        setcap cap_sys_rawio,cap_sys_nice,cap_sys_admin=ep /sbin/turbostat
-        chmod u+s /sbin/turbostat
-        if [ -x /usr/lib/monitor-dock-plugin/gpu-fan-helper ]; then
-            chown root:root /usr/lib/monitor-dock-plugin/gpu-fan-helper
-            chmod 4755 /usr/lib/monitor-dock-plugin/gpu-fan-helper
+        modprobe msr 2>/dev/null || true
+        monitor_turbostat="$(command -v turbostat 2>/dev/null || true)"
+        if [ -n "$monitor_turbostat" ]; then
+            setcap cap_sys_rawio,cap_sys_nice,cap_sys_admin=ep "$monitor_turbostat" || true
         fi
         ;;
 esac

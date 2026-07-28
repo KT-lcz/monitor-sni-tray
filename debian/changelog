@@ -1,3 +1,23 @@
+monitor-dock-plugin (0.3.0-1) unstable; urgency=medium
+
+  * Show live hardware information directly in the tray menu.
+  * Make both primary and context tray interactions use the SNI menu.
+  * Remove the CPU-X launch behavior and runtime dependency.
+
+ -- lichangze <lichangze512@gmail.com>  Tue, 28 Jul 2026 12:00:00 +0800
+
+monitor-dock-plugin (0.2.1-1) unstable; urgency=medium
+
+  * Export a DBusMenu for SNI hosts that do not invoke item click methods.
+
+ -- lichangze <lichangze512@gmail.com>  Sat, 25 Jul 2026 13:00:00 +0800
+
+monitor-dock-plugin (0.2.0-1) unstable; urgency=medium
+
+  * Replace the dde-dock shared library with an SNI tray application.
+
+ -- lichangze <lichangze512@gmail.com>  Sat, 25 Jul 2026 12:00:00 +0800
+
 monitor-dock-plugin (0.1.0-1) unstable; urgency=medium
 
   * Initial Debian packaging.
