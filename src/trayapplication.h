@@ -63,6 +63,9 @@ private:
     bool appendMenuPropertyValue(DBusMessageIter *iterator, int itemId, const QString &name) const;
     QVector<int> menuChildren(int itemId) const;
     QString menuLabel(int itemId) const;
+    bool menuItemEnabled(int itemId) const;
+    int selectedGpuFanModeItem() const;
+    void setGpuFanMode(int itemId);
     void showLocalMenu(int x, int y);
     void sendMenuItemsUpdated();
     void sendMenuLayoutUpdated();
@@ -80,6 +83,8 @@ private:
     bool m_available = false;
     dbus_uint32_t m_menuRevision = 1;
     int m_diskItemCount = 1;
+    int m_requestedGpuFanModeItem = 0;
+    bool m_gpuFanSettingPending = false;
     CpuMemStats m_stats;
 };
 

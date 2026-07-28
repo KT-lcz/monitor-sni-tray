@@ -6,6 +6,7 @@ monitor-dock-plugin (0.3.0-1) unstable; urgency=medium
   * Read CPU temperature from hwmon without elevated privileges.
   * Read RAPL power through a capability-limited package helper.
   * Remove the obsolete broad turbostat capabilities on upgrade.
+  * Add mutually exclusive automatic, low, high and full GPU fan controls.
 
  -- lichangze <lichangze512@gmail.com>  Tue, 28 Jul 2026 12:00:00 +0800
 

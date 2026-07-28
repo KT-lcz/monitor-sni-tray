@@ -1,10 +1,15 @@
 #include "trayapplication.h"
 
+#include <QActionGroup>
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QFileInfo>
 #include <QImage>
 #include <QMenu>
 #include <QPainter>
 #include <QPoint>
+#include <QProcess>
 #include <QSocketNotifier>
 #include <QStringList>
 #include <QtEndian>
@@ -20,6 +25,65 @@ constexpr const char kMenuInterface[] = "com.canonical.dbusmenu";
 constexpr const char kWatcherService[] = "org.kde.StatusNotifierWatcher";
 constexpr const char kWatcherPath[] = "/StatusNotifierWatcher";
 constexpr const char kPropertiesInterface[] = "org.freedesktop.DBus.Properties";
+constexpr int kGpuFanAutoItem = 20;
+constexpr int kGpuFanLowItem = 21;
+constexpr int kGpuFanHighItem = 22;
+constexpr int kGpuFanFullItem = 23;
+
+#ifndef MONITOR_GPU_FAN_HELPER_PATH
+#define MONITOR_GPU_FAN_HELPER_PATH "monitor-gpu-fan-helper"
+#endif
+
+bool isGpuFanModeItem(int itemId)
+{
+    return itemId >= kGpuFanAutoItem && itemId <= kGpuFanFullItem;
+}
+
+QString gpuFanModeArgument(int itemId)
+{
+    switch (itemId) {
+    case kGpuFanAutoItem:
+        return QStringLiteral("auto");
+    case kGpuFanLowItem:
+        return QStringLiteral("low");
+    case kGpuFanHighItem:
+        return QStringLiteral("high");
+    case kGpuFanFullItem:
+        return QStringLiteral("full");
+    default:
+        return {};
+    }
+}
+
+int gpuFanModeItem(const CpuMemStats::GpuStats &stats)
+{
+    if (!stats.fanValid) {
+        return 0;
+    }
+    if (stats.automaticFan) {
+        return kGpuFanAutoItem;
+    }
+    if (stats.fanPercent >= 95) {
+        return kGpuFanFullItem;
+    }
+    if (stats.fanPercent >= 65) {
+        return kGpuFanHighItem;
+    }
+    return kGpuFanLowItem;
+}
+
+QString gpuFanHelperPath()
+{
+    const QString overridePath = qEnvironmentVariable("MONITOR_GPU_FAN_HELPER");
+    if (!overridePath.isEmpty()) {
+        return overridePath;
+    }
+
+    const QString adjacentPath = QCoreApplication::applicationDirPath()
+        + QStringLiteral("/monitor-gpu-fan-helper");
+    return QFileInfo::exists(adjacentPath)
+        ? adjacentPath : QStringLiteral(MONITOR_GPU_FAN_HELPER_PATH);
+}
 
 const char kIntrospectionXml[] = R"XML(
 <node>
@@ -178,6 +242,19 @@ void appendBooleanProperty(DBusMessageIter *properties, const char *name, bool v
     dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "b", &variant);
     dbus_bool_t booleanValue = value;
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &booleanValue);
+    dbus_message_iter_close_container(&entry, &variant);
+    dbus_message_iter_close_container(properties, &entry);
+}
+
+void appendInt32Property(DBusMessageIter *properties, const char *name, int value)
+{
+    DBusMessageIter entry;
+    DBusMessageIter variant;
+    dbus_message_iter_open_container(properties, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
+    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &name);
+    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "i", &variant);
+    dbus_int32_t intValue = value;
+    dbus_message_iter_append_basic(&variant, DBUS_TYPE_INT32, &intValue);
     dbus_message_iter_close_container(&entry, &variant);
     dbus_message_iter_close_container(properties, &entry);
 }
@@ -676,8 +753,9 @@ DBusHandlerResult MonitorTrayApplication::handleMenuMessage(DBusMessage *message
                 dbus_message_iter_get_basic(&request, &eventId);
             }
         }
-        Q_UNUSED(itemId)
-        Q_UNUSED(eventId)
+        if (eventId && qstrcmp(eventId, "clicked") == 0 && isGpuFanModeItem(itemId)) {
+            setGpuFanMode(itemId);
+        }
         sendReply(m_connection, message, dbus_message_new_method_return(message));
         return DBUS_HANDLER_RESULT_HANDLED;
     }
@@ -889,7 +967,12 @@ void MonitorTrayApplication::appendMenuProperties(DBusMessageIter *iterator, int
         appendStringProperty(iterator, "type", QStringLiteral("separator"));
     } else {
         appendStringProperty(iterator, "label", menuLabel(itemId));
-        appendBooleanProperty(iterator, "enabled", false);
+        appendBooleanProperty(iterator, "enabled", menuItemEnabled(itemId));
+        if (isGpuFanModeItem(itemId)) {
+            appendStringProperty(iterator, "toggle-type", QStringLiteral("radio"));
+            appendInt32Property(iterator, "toggle-state",
+                                selectedGpuFanModeItem() == itemId ? 1 : 0);
+        }
     }
     appendBooleanProperty(iterator, "visible", true);
 }
@@ -904,9 +987,16 @@ bool MonitorTrayApplication::appendMenuPropertyValue(
     } else if (name == QStringLiteral("type") && isMenuSeparator(itemId)) {
         dbus_message_iter_open_container(iterator, DBUS_TYPE_VARIANT, "s", &variant);
         appendString(&variant, QStringLiteral("separator"));
+    } else if (name == QStringLiteral("toggle-type") && isGpuFanModeItem(itemId)) {
+        dbus_message_iter_open_container(iterator, DBUS_TYPE_VARIANT, "s", &variant);
+        appendString(&variant, QStringLiteral("radio"));
+    } else if (name == QStringLiteral("toggle-state") && isGpuFanModeItem(itemId)) {
+        dbus_message_iter_open_container(iterator, DBUS_TYPE_VARIANT, "i", &variant);
+        dbus_int32_t value = selectedGpuFanModeItem() == itemId ? 1 : 0;
+        dbus_message_iter_append_basic(&variant, DBUS_TYPE_INT32, &value);
     } else if (name == QStringLiteral("enabled") || name == QStringLiteral("visible")) {
         dbus_message_iter_open_container(iterator, DBUS_TYPE_VARIANT, "b", &variant);
-        dbus_bool_t value = name == QStringLiteral("visible") || itemId == 0;
+        dbus_bool_t value = name == QStringLiteral("visible") || menuItemEnabled(itemId);
         dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &value);
     } else {
         return false;
@@ -921,7 +1011,11 @@ QVector<int> MonitorTrayApplication::menuChildren(int itemId) const
         return {};
     }
 
-    QVector<int> children = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    QVector<int> children = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9,
+        kGpuFanAutoItem, kGpuFanLowItem, kGpuFanHighItem, kGpuFanFullItem,
+        10,
+    };
     const int diskCount = qMax(1, m_stats.disks.volumes.size());
     for (int index = 0; index < diskCount; ++index) {
         children.append(100 + index);
@@ -976,6 +1070,14 @@ QString MonitorTrayApplication::menuLabel(int itemId) const
             .arg(m_stats.gpu.rpmValid
                      ? QStringLiteral("%1 RPM").arg(m_stats.gpu.fanRpm)
                      : QStringLiteral("PWM %1/%2").arg(m_stats.gpu.fanPwm).arg(m_stats.gpu.fanMaxPwm));
+    case kGpuFanAutoItem:
+        return QStringLiteral("GPU 风扇：自动");
+    case kGpuFanLowItem:
+        return QStringLiteral("GPU 风扇：低速");
+    case kGpuFanHighItem:
+        return QStringLiteral("GPU 风扇：高速");
+    case kGpuFanFullItem:
+        return QStringLiteral("GPU 风扇：满速");
     case 12:
         return QStringLiteral("下载速度：%1")
             .arg(m_stats.network.valid
@@ -997,18 +1099,91 @@ QString MonitorTrayApplication::menuLabel(int itemId) const
     }
 }
 
+bool MonitorTrayApplication::menuItemEnabled(int itemId) const
+{
+    if (itemId == 0) {
+        return true;
+    }
+    return isGpuFanModeItem(itemId)
+        && m_stats.gpu.fanValid
+        && !m_gpuFanSettingPending;
+}
+
+int MonitorTrayApplication::selectedGpuFanModeItem() const
+{
+    return m_requestedGpuFanModeItem != 0
+        ? m_requestedGpuFanModeItem : gpuFanModeItem(m_stats.gpu);
+}
+
+void MonitorTrayApplication::setGpuFanMode(int itemId)
+{
+    const QString mode = gpuFanModeArgument(itemId);
+    if (mode.isEmpty() || !menuItemEnabled(itemId)) {
+        return;
+    }
+
+    m_gpuFanSettingPending = true;
+    sendMenuItemsUpdated();
+
+    QProcess *process = new QProcess(this);
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart || !m_gpuFanSettingPending) {
+                    return;
+                }
+                m_gpuFanSettingPending = false;
+                qWarning().noquote() << "GPU fan helper failed to start:"
+                                     << process->errorString();
+                sendMenuItemsUpdated();
+                process->deleteLater();
+            });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, process, itemId](int exitCode, QProcess::ExitStatus exitStatus) {
+                if (!m_gpuFanSettingPending) {
+                    process->deleteLater();
+                    return;
+                }
+                m_gpuFanSettingPending = false;
+                if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                    m_requestedGpuFanModeItem = itemId;
+                    requestSample();
+                } else {
+                    qWarning().noquote() << "GPU fan helper failed:"
+                                         << QString::fromUtf8(process->readAllStandardError()).trimmed();
+                }
+                sendMenuItemsUpdated();
+                process->deleteLater();
+            });
+    process->start(gpuFanHelperPath(), { mode });
+    QTimer::singleShot(3000, process, [process] {
+        if (process->state() != QProcess::NotRunning) {
+            process->kill();
+        }
+    });
+}
+
 void MonitorTrayApplication::showLocalMenu(int x, int y)
 {
     requestSample();
     QMenu *menu = new QMenu;
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    QActionGroup *fanGroup = new QActionGroup(menu);
+    fanGroup->setExclusive(true);
     for (int itemId : menuChildren(0)) {
         if (isMenuSeparator(itemId)) {
             menu->addSeparator();
             continue;
         }
         QAction *action = menu->addAction(menuLabel(itemId));
-        action->setEnabled(false);
+        action->setEnabled(menuItemEnabled(itemId));
+        if (isGpuFanModeItem(itemId)) {
+            action->setCheckable(true);
+            action->setChecked(selectedGpuFanModeItem() == itemId);
+            fanGroup->addAction(action);
+            connect(action, &QAction::triggered, this, [this, itemId] {
+                setGpuFanMode(itemId);
+            });
+        }
     }
     menu->popup(QPoint(x, y));
 }
@@ -1038,6 +1213,10 @@ void MonitorTrayApplication::applyStats(const CpuMemStats &stats)
     m_samplePending = false;
     const int oldDiskItemCount = m_diskItemCount;
     m_stats = stats;
+    if (m_requestedGpuFanModeItem != 0
+        && gpuFanModeItem(m_stats.gpu) == m_requestedGpuFanModeItem) {
+        m_requestedGpuFanModeItem = 0;
+    }
     m_diskItemCount = qMax(1, m_stats.disks.volumes.size());
     sendSignal("NewToolTip");
     if (m_diskItemCount != oldDiskItemCount) {
@@ -1073,6 +1252,11 @@ void MonitorTrayApplication::sendMenuItemsUpdated()
         dbus_message_iter_append_basic(&item, DBUS_TYPE_INT32, &id);
         dbus_message_iter_open_container(&item, DBUS_TYPE_ARRAY, "{sv}", &properties);
         appendStringProperty(&properties, "label", menuLabel(itemId));
+        appendBooleanProperty(&properties, "enabled", menuItemEnabled(itemId));
+        if (isGpuFanModeItem(itemId)) {
+            appendInt32Property(&properties, "toggle-state",
+                                selectedGpuFanModeItem() == itemId ? 1 : 0);
+        }
         dbus_message_iter_close_container(&item, &properties);
         dbus_message_iter_close_container(&updated, &item);
     }

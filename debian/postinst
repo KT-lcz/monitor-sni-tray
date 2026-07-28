@@ -19,6 +19,12 @@ case "$1" in
             setcap cap_dac_read_search=ep "$monitor_power_helper" \
                 || echo "warning: CPU power monitoring capability could not be configured" >&2
         fi
+
+        monitor_gpu_fan_helper="/usr/libexec/monitor-gpu-fan-helper"
+        if [ -x "$monitor_gpu_fan_helper" ]; then
+            setcap cap_dac_override=ep "$monitor_gpu_fan_helper" \
+                || echo "warning: GPU fan control capability could not be configured" >&2
+        fi
         ;;
 esac
 

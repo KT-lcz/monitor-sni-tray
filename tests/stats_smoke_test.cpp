@@ -158,6 +158,30 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    CpuMemStats::GpuStats fanModeStats;
+    fanModeStats.fanValid = true;
+    fanModeStats.automaticFan = true;
+    if (fanModeStats.fanLevel() != QStringLiteral("自动")) {
+        qCritical() << "failed to label automatic GPU fan mode";
+        return 1;
+    }
+    fanModeStats.automaticFan = false;
+    fanModeStats.fanPercent = 50;
+    if (fanModeStats.fanLevel() != QStringLiteral("低速")) {
+        qCritical() << "failed to label low GPU fan mode";
+        return 1;
+    }
+    fanModeStats.fanPercent = 80;
+    if (fanModeStats.fanLevel() != QStringLiteral("高速")) {
+        qCritical() << "failed to label high GPU fan mode";
+        return 1;
+    }
+    fanModeStats.fanPercent = 100;
+    if (fanModeStats.fanLevel() != QStringLiteral("满速")) {
+        qCritical() << "failed to label full GPU fan mode";
+        return 1;
+    }
+
     CpuMemStatsReader reader;
     QThread::msleep(120);
     const CpuMemStats stats = reader.sample();

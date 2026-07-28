@@ -15,6 +15,10 @@ CPU 封装温度直接来自 `/sys/class/hwmon` 中的 `coretemp`、`k10temp` �
 GPU 信息来自 `/sys/class/drm/*/device/hwmon`，磁盘信息来自系统挂载卷，网络速度
 来自 `/proc/net/dev`。
 
+GPU 风扇菜单提供自动、低速（50% PWM）、高速（80% PWM）和满速四个互斥档位。
+写入 hwmon 的 `monitor-gpu-fan-helper` 同样不使用 setuid，只授予
+`CAP_DAC_OVERRIDE`，且只接受上述四种固定模式。
+
 ## 依赖
 
 Debian/Ubuntu 构建依赖：
@@ -35,6 +39,7 @@ sudo apt install libcap2-bin
 ```bash
 sudo cmake --install build
 sudo setcap cap_dac_read_search=ep /usr/local/libexec/monitor-power-helper
+sudo setcap cap_dac_override=ep /usr/local/libexec/monitor-gpu-fan-helper
 ```
 
 Debian 包会在安装和升级时自动完成 helper 的 capability 配置。
@@ -60,6 +65,7 @@ sudo cmake --install build
 
 - `/usr/local/bin/monitor-sni-tray`
 - `/usr/local/libexec/monitor-power-helper`
+- `/usr/local/libexec/monitor-gpu-fan-helper`
 - `/usr/local/share/applications/monitor-sni-tray.desktop`
 - `/etc/xdg/autostart/monitor-sni-tray.desktop`
 

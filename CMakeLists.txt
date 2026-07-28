@@ -34,6 +34,7 @@ add_executable(${PROJECT_NAME}
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     MONITOR_POWER_HELPER_PATH="${CMAKE_INSTALL_FULL_LIBEXECDIR}/monitor-power-helper"
+    MONITOR_GPU_FAN_HELPER_PATH="${CMAKE_INSTALL_FULL_LIBEXECDIR}/monitor-gpu-fan-helper"
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -52,6 +53,13 @@ add_executable(monitor-power-helper
 )
 target_link_libraries(monitor-power-helper PRIVATE Threads::Threads)
 install(TARGETS monitor-power-helper RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
+
+add_executable(monitor-gpu-fan-helper
+    src/gpufanhelper.cpp
+    src/gpuhwmon.cpp
+    src/gpuhwmon.h
+)
+install(TARGETS monitor-gpu-fan-helper RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 
 install(FILES assets/monitor-sni-tray.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES assets/monitor-sni-tray.desktop DESTINATION /etc/xdg/autostart)

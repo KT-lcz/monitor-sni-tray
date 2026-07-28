@@ -186,15 +186,11 @@ QString CpuMemStats::GpuStats::fanLevel() const
         return QStringLiteral("满速");
     }
 
-    if (fanPercent >= 70) {
-        return QStringLiteral("较高");
+    if (fanPercent >= 65) {
+        return QStringLiteral("高速");
     }
 
-    if (fanPercent >= 45) {
-        return QStringLiteral("中等");
-    }
-
-    return QStringLiteral("较低");
+    return QStringLiteral("低速");
 }
 
 CpuMemStatsReader::CpuMemStatsReader()
