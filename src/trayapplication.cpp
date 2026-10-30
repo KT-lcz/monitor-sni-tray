@@ -3,8 +3,10 @@
 #include <QActionGroup>
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDebug>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
 #include <QMenu>
 #include <QPainter>
@@ -1165,8 +1167,14 @@ void MonitorTrayApplication::setGpuFanMode(int itemId)
 void MonitorTrayApplication::showLocalMenu(int x, int y)
 {
     requestSample();
+
+    if (m_localMenu) {
+        m_localMenu->close();
+    }
+
     QMenu *menu = new QMenu;
-    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    m_localMenu = menu;
+    m_localMenuActions.clear();
     QActionGroup *fanGroup = new QActionGroup(menu);
     fanGroup->setExclusive(true);
     for (int itemId : menuChildren(0)) {
@@ -1176,6 +1184,7 @@ void MonitorTrayApplication::showLocalMenu(int x, int y)
         }
         QAction *action = menu->addAction(menuLabel(itemId));
         action->setEnabled(menuItemEnabled(itemId));
+        m_localMenuActions.insert(itemId, action);
         if (isGpuFanModeItem(itemId)) {
             action->setCheckable(true);
             action->setChecked(selectedGpuFanModeItem() == itemId);
@@ -1185,7 +1194,37 @@ void MonitorTrayApplication::showLocalMenu(int x, int y)
             });
         }
     }
-    menu->popup(QPoint(x, y));
+    connect(menu, &QMenu::aboutToHide, this, [this, menu] {
+        if (m_localMenu == menu) {
+            m_localMenu = nullptr;
+            m_localMenuActions.clear();
+        }
+        menu->deleteLater();
+    });
+
+    QPoint position(x, y);
+    // Hosts such as dde-shell pass (0, 0) when invoking Activate; anchor at
+    // the pointer so the menu opens next to the tray icon instead of the
+    // top-left corner of the desktop.
+    if ((x == 0 && y == 0) || !QGuiApplication::screenAt(position)) {
+        position = QCursor::pos();
+    }
+    menu->popup(position);
+}
+
+void MonitorTrayApplication::refreshLocalMenu()
+{
+    if (!m_localMenu) {
+        return;
+    }
+    for (auto it = m_localMenuActions.cbegin(); it != m_localMenuActions.cend(); ++it) {
+        QAction *action = it.value();
+        action->setText(menuLabel(it.key()));
+        action->setEnabled(menuItemEnabled(it.key()));
+        if (isGpuFanModeItem(it.key())) {
+            action->setChecked(selectedGpuFanModeItem() == it.key());
+        }
+    }
 }
 
 void MonitorTrayApplication::processDBus()
@@ -1218,6 +1257,7 @@ void MonitorTrayApplication::applyStats(const CpuMemStats &stats)
         m_requestedGpuFanModeItem = 0;
     }
     m_diskItemCount = qMax(1, m_stats.disks.volumes.size());
+    refreshLocalMenu();
     sendSignal("NewToolTip");
     if (m_diskItemCount != oldDiskItemCount) {
         sendMenuLayoutUpdated();

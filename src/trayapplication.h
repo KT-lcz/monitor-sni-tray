@@ -3,13 +3,17 @@
 
 #include "systemstats.h"
 
+#include <QHash>
 #include <QObject>
+#include <QPointer>
 #include <QScopedPointer>
 #include <QThread>
 #include <QTimer>
 
 #include <dbus/dbus.h>
 
+class QAction;
+class QMenu;
 class QSocketNotifier;
 
 class MonitorStatsWorker : public QObject
@@ -67,6 +71,7 @@ private:
     int selectedGpuFanModeItem() const;
     void setGpuFanMode(int itemId);
     void showLocalMenu(int x, int y);
+    void refreshLocalMenu();
     void sendMenuItemsUpdated();
     void sendMenuLayoutUpdated();
     QString toolTipText() const;
@@ -85,6 +90,8 @@ private:
     int m_diskItemCount = 1;
     int m_requestedGpuFanModeItem = 0;
     bool m_gpuFanSettingPending = false;
+    QPointer<QMenu> m_localMenu;
+    QHash<int, QAction *> m_localMenuActions;
     CpuMemStats m_stats;
 };
 
